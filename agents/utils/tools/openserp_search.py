@@ -2,7 +2,7 @@
 
 # /agents/utils/tools/openserp_search.py
 # SudoHopeX KaliGPT
-# Last updated: 30 Jan 2026
+# Last updated: 1 fEB 2026
 
 
 import requests
@@ -15,18 +15,18 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 DEFAULT_BASE_URL = "http://127.0.0.1:7000"
 
 
-def check_search_connection(base_url: str = DEFAULT_BASE_URL, timeout: int = 10) -> bool:
+def check_search_connection(timeout: int = 10) -> bool:
     """
     checks if the OpenSerp search backend is available.
     """
 
     # perform a get request to test availability
     try:
-        response = requests.get(f"{base_url}/mega/search?text=test", timeout=timeout)
+        response = requests.get(f"{DEFAULT_BASE_URL}/mega/search?text=test", timeout=timeout)
         return response.status_code == 200
 
     except requests.RequestException as re:
-        print(f"OpenSerp Search Connection error\nEndpoint used: {base_url}\nError details: {re}")
+        print(f"OpenSerp Search Connection error\nEndpoint used: {DEFAULT_BASE_URL}\nError details: {re}")
         return False    # any exception results as False
 
 
