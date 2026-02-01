@@ -2,16 +2,16 @@
 
 # kaligpt Ollama Agent
 # /agent/ollama.py
-# Updated: 28 January 2026
+# Updated: 1 Feb 2026
 
 
 import sys
-import types
-from ollama import chat, ChatResponse
+import asyncio
+from ollama import AsyncClient
 
 from .utils.parse_n_print_response import parse_n_print_response
 from .utils.prompts import SYSTEM_PROMPT
-from .utils.agent_configs import get_default_model, get_ai_specific_default_model, get_api_key
+from .utils.agent_configs import get_ai_specific_default_model, get_api_key
 from .utils.tools import get_tools_info
 from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 from .utils.openai_tool_adapter import openai_tool_adapter
@@ -22,13 +22,17 @@ OLLAMA_API_URL: str   # OLLAMA API URL as OLLAMA_API_KEY
 OLLAMA_MODEL: str
 TOOLS_INFO: list
 TOOL_FUNCTION_MAP: dict
-print_msg: bool
+client: AsyncClient
 
 def initialize_configs():
-    global OLLAMA_API_URL, OLLAMA_MODEL, TOOLS_INFO, TOOL_FUNCTION_MAP, print_msg
+    global OLLAMA_API_URL, OLLAMA_MODEL, TOOLS_INFO, TOOL_FUNCTION_MAP, client
     try:
         OLLAMA_API_URL = get_api_key("ollama")
         OLLAMA_MODEL = get_ai_specific_default_model("ollama")
+
+        # initialize ollama AsyncClient
+        client = AsyncClient(host=OLLAMA_API_URL)
+
         tools = get_tools_info()
         TOOLS_INFO = [openai_tool_adapter(f) for f in tools]
 
@@ -38,10 +42,8 @@ def initialize_configs():
         # --- TOOL EXECUTION HELPER (Your Original Function) ---
         TOOL_FUNCTION_MAP = {func.__name__: func for func in tools} if tools else {}
 
-        # print that tool doesn't support's thinking or tool_calls
-        print_msg = True
     except Exception as e:
-        print(f"Failed to initialize Ollama Agent: {e}")
+        print(f"Failed to initialize Ollama Agent: {e}\n OLLAMA_API_URL: {OLLAMA_API_URL}")
         sys.exit(1)
 
 
@@ -56,14 +58,14 @@ def trim_history(history):
 
 def execute_function_calls(function_calls):
     response_parts = []
-    print("\n[HackerX Tool Use] Owo! I found a tool I need to run! <3")
 
     for call in function_calls:
-        func_name = call.name
-        func_args = dict(call.args)
+        func_name = call.function.name
+        func_args = dict(call.function.arguments)
+
+        print(f"\n[HackerX Tool Use] name: {func_name}, args: {func_args}")
 
         if func_name in TOOL_FUNCTION_MAP:
-            print(f"[HackerX Tool Use] Running tool: {func_name} with args: {func_args}")
             try:
                 result_text = TOOL_FUNCTION_MAP[func_name](**func_args)
             except Exception as e:
@@ -71,56 +73,68 @@ def execute_function_calls(function_calls):
         else:
             result_text = f"Tool {func_name} not found!"
 
-        response_parts.append(
-            types.Part.from_function_response(name=func_name, response={"result": result_text})
-        )
+        response_parts.append({
+                "name": func_name,
+                "result": str(result_text)
+            })
 
     return response_parts
 
 
-# getting response from ollama model with tool calling Agent Loop
-def ask(user_input, history, tools):
-
-    messages = trim_history(history) + [
-        {"role": "user", "content": user_input}
-    ]
+async def ask(user_input, history, tools):
+    messages = trim_history(history) + [{"role": "user", "content": user_input}]
 
     while True:
         try:
-            response: ChatResponse = chat(
+            # Get the async iterator for streaming response
+            stream = await client.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
                 tools=tools,
-                think=True
-            )
-        except:
-            global print_msg
-            if print_msg:
-                print("[!] Thinking or Tool call disabled for this model (Check it's documentation)\n")
-                print_msg = False
-            response: ChatResponse = chat(
-                model=OLLAMA_MODEL,
-                messages=messages
+                think=True,
+                stream=True  # ← Enable streaming
             )
 
-        messages.append({"role": "assistant", "content": str(response.message.content)})
+            full_content = ""
+            tool_calls = []
 
-        if response.message.tool_calls:
-            tool_result = execute_function_calls(response.message.tool_calls)
+            # Process streamed chunks
+            async for chunk in stream:
+                if chunk.message.content:
+                    # print(chunk.message.content, end="", flush=True)
+                    full_content += chunk.message.content
+                if chunk.message.tool_calls:
+                    tool_calls.extend(chunk.message.tool_calls)
 
-            # continue the loop with the updated messages
-            messages.append({"role": "tool", "content": str(tool_result)})
+            # Append full assistant message to history
+            messages.append({
+                "role": "assistant",
+                "content": full_content,
+                "tool_calls": tool_calls
+            })
 
-        else:
+            if tool_calls:
+                tool_results = execute_function_calls(tool_calls)
+                messages.append({
+                    "role": "tool",
+                    "content": str(tool_results)
+                })
+            else:
+                break
+
+        except Exception as e:
+
+            print(f"[!] Streaming/tool error: {e}. Falling back...")
+            # Fallback to non-streaming
+            response = await client.chat(model=OLLAMA_MODEL, messages=messages)
+            full_content = response.message.content
+            messages.append({"role": "assistant", "content": str(full_content)})
             break
 
-    response_text = response.message.content
-    new_history = messages
-
-    return response_text, new_history
+    return full_content, messages
 
 
-def main(prompt=None):
+async def main(prompt=None):
 
     # Initialize chat history with system prompt
     chat_history: list = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -140,7 +154,7 @@ def main(prompt=None):
                 prompt = None
                 continue
 
-            response, chat_history = ask(
+            response, chat_history = await ask(
                 history=chat_history,
                 user_input=prompt,
                 tools=TOOLS_INFO
@@ -159,8 +173,9 @@ def main(prompt=None):
             break
 
 if __name__ == "__main__":
+
     if len(sys.argv) > 1:
         args = ' '.join(sys.argv[1:])
-        main(args)
+        asyncio.run(main(args))
     else:
-        main()
+        asyncio.run(main())
