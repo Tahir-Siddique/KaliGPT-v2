@@ -28,13 +28,13 @@
     },
     "ollama": {
         "api_key": "http://localhost:11434",
-        "default_model": "llama3:latest",
+        "default_model": "llama3",
         "models": [
-            "llama3:latest",
-            "llama3.1:latest",
-            "gpt-oss:latest",
+            "llama3",
+            "llama3.1",
+            "gpt-oss",
             "gpt-oss:120b-cloud",
-            "qwen3:latest",
+            "qwen3",
             "qwen3:14b"
         ]
     },
@@ -69,4 +69,5 @@
         ]
     }
 }
+
 
