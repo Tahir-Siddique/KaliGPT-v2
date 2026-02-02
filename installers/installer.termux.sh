@@ -4,7 +4,7 @@ trap "kill $SPIN_PID 2>/dev/null" EXIT
 
 # KaliGPT v1.3 Setup (check & install dependencies, create launcher) Script for Termux
 # by SudoHopeX ( SudoHopeX )
-# Last Modified: 2 feb 2026
+# Last Modified: 30 Jan 2026
 
 
 # Global variables
@@ -118,7 +118,7 @@ OPENSERP_PID=""  # Initialize for holding OpenSerp PID
 
 # start the openserp server in background
 start_openserp() {
-    OPENSERP_PID=$(python -m agents.utils.openserp_management.py --start-termux)
+    OPENSERP_PID=$(python -m agents.utils.openserp_management --start-termux)
    # echo -e "\e[1;32m[✓] OpenSerp started with PID: $OPENSERP_PID\e[0m"
 }
 
@@ -168,10 +168,10 @@ case "\$MODE" in
                 echo ""
                 echo -e "\e[1;33mModel Management: \e[0m"
                 echo ""
-                echo "    /change model             = change to a different AI model"
-                echo "    /reset to default model   = reset to KaliGPT default AI model (Gemini)"
-                echo "    /set vendor default model = set default model for a specific vendor"
-                echo "    /list tools               = list available tools for AI Agent"
+                echo "    /change-model             = change to a different AI model"
+                echo "    /reset-to-default-model   = reset to KaliGPT default AI model (Gemini)"
+                echo "    /set-vendor-default-model = set default model for a specific vendor"
+                echo "    /list-tools               = list available tools for AI Agent"
                 echo ""
                 echo -e "\e[1;33mExamples:\e[0m"
                 echo "     kaligpt  ( uses default model and will ask for prompt )"
