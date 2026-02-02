@@ -51,7 +51,6 @@ def main(args):
 
             command = ["python", "-m", f"agents.{default_model}", prompt]
             # print(f"[+] Launching KaliGPT with default model: {default_model} & prompt: {prompt}")
-            print(f"You > {prompt}")
             
             try:
                 # using python -m agents.agent_module_name to launch the agent
