@@ -154,7 +154,7 @@ OPENSERP_PID=""  # Initialize for holding OpenSerp PID
 
 # start the openserp server in background via python
 st_openserp() {
-  OPENSERP_PID=$(python3 -m agents.utils.openserp_management.py --start)
+  OPENSERP_PID=$(python3 -m agents.utils.openserp_management --start)
   # echo -e "\e[1;32m[✓] OpenSerp started with PID: $OPENSERP_PID\e[0m"
 }
 
@@ -210,10 +210,10 @@ case "$MODE" in
                 echo ""
                 echo -e "\e[1;33mModel Management: \e[0m"
                 echo ""
-                echo "    /change model             = change to a different AI model"
-                echo "    /reset to default model   = reset to KaliGPT default AI model (Gemini)"
-                echo "    /set vendor default model = set default model for a specific vendor"
-                echo "    /list tools               = list available tools for AI Agent"
+                echo "    /change-model             = change to a different AI model"
+                echo "    /reset-to-default-model   = reset to KaliGPT default AI model (Gemini)"
+                echo "    /set-vendor-default-model = set default model for a specific vendor"
+                echo "    /list-tools               = list available tools for AI Agent"
                 echo ""
                 echo -e "\e[1;33mExamples:\e[0m"
                 echo "     kaligpt  ( uses default model and will ask for prompt )"
