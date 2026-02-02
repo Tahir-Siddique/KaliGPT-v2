@@ -2,13 +2,13 @@
 
 # KaliGPT v1.3 (HackerX)
 # /agents/__main__.py
-# Set or Store user API keys & launch default model agent
-# Last Modified: 27 January 2026
+# Set AI API keys & launch default model agent, provide Configuration (reset model, change model etc.) management
+# Last Modified: 2 feb 2026
 
 import sys
 import subprocess
 from .utils.agent_configs import update_api_key, get_available_ais, get_default_provider
-
+from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 
 # --- Set API key ---
 def set_api_keys():
@@ -40,6 +40,9 @@ def main(args):
         case ["--setup-keys"]:
             set_api_keys()
 
+        case [option] if option in AI_MANAGEMENT_OPTIONS[:4]:
+            agent_management(option)
+
         case _:
             default_model = get_default_provider()
             prompt: str = "Are you Ready for Hacking?"
@@ -57,7 +60,7 @@ def main(args):
             except Exception as e:
                 print(f"Exception occurred: {e}")
 
-            except KeyboardInterrupt:
+            except KeyboardInterrupt as ki:
                 print("\n\n")   # MSG already printed by running agent module
 
 if __name__ == "__main__":
