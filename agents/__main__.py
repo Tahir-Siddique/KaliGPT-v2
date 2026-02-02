@@ -50,8 +50,9 @@ def main(args):
                 prompt = args[0]
 
             command = ["python", "-m", f"agents.{default_model}", prompt]
-            print(f"[+] Launching KaliGPT with default model: {default_model} & prompt: {prompt}")
-
+            # print(f"[+] Launching KaliGPT with default model: {default_model} & prompt: {prompt}")
+            print(f"You > {prompt}")
+            
             try:
                 # using python -m agents.agent_module_name to launch the agent
                 # print(f"Running command: {' '.join(command)}")
@@ -60,7 +61,7 @@ def main(args):
             except Exception as e:
                 print(f"Exception occurred: {e}")
 
-            except KeyboardInterrupt as ki:
+            except KeyboardInterrupt:
                 print("\n\n")   # MSG already printed by running agent module
 
 if __name__ == "__main__":
