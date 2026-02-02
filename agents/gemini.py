@@ -2,7 +2,7 @@
 
 # /agents/gemini.py
 # KaliGPT Gemini_agent
-# Updated: 26 Jan 2026
+# Updated: 2 feb 2026
 
 
 from google import genai
@@ -152,7 +152,7 @@ def main(prompt=None):
     initialize_configs()   # initialize configs for gemini
 
     # Print tool banner
-    print(f"㉿ HackerX ({GEMINI_MODEL})")
+    print(f"㉿ HackerX ( Gemini/{GEMINI_MODEL} )")
     while True:
         try:
             if prompt is None:
