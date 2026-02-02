@@ -29,7 +29,7 @@ def initialize_configs():
     global OPENAI_API_KEY, OPENAI_MODEL, client, TOOLS_INFO, TOOL_FUNCTION_MAP
     try:
         OPENAI_API_KEY = get_api_key("chatgpt")
-        OPENAI_MODEL = get_default_model() or get_ai_specific_default_model("chatgpt")
+        OPENAI_MODEL = get_ai_specific_default_model("chatgpt")
 
         if not OPENAI_API_KEY or 'sk-' not in OPENAI_API_KEY:
             print(f"[!] ChatGPT API Key not Found or not valid. exiting!")
