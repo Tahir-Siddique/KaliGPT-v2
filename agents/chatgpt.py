@@ -2,7 +2,7 @@
 
 # /agents/chatgpt.py
 # KaliGPT ChatGPT_agent
-# Updated: 28 Jan 2026
+# Updated: 2 feb 2026
 
 
 from openai import OpenAI
@@ -119,7 +119,7 @@ def main(prompt=None):
     initialize_configs()   # initialize configs for OpenAI ChatGPT
 
     # Print tool banner
-    print(f"㉿ HackerX ({OPENAI_MODEL})")
+    print(f"㉿ HackerX ( openai/{OPENAI_MODEL} )")
     while True:
         try:
             if prompt is None:
