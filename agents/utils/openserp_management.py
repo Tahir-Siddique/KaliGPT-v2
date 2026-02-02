@@ -11,12 +11,13 @@ import argparse
 
 
 # Define the working directory where openserp is located
-working_directory = os.path.join(os.path.dirname(__file__), "/opt", "KaliGPT", "openserp")
+linux_working_directory = os.path.join(os.path.dirname(__file__), "/opt", "KaliGPT", "openserp")
+termux_working_directory = os.path.join(os.path.dirname(__file__), "/data", "data", "com.termux", "files", "usr", "share", "KaliGPT", "openserp")
 
 
-def start_openserp_service():
+def start_openserp_service(working_directory=linux_working_directory) -> str:
     """
-    Starts the OpenSerp search backend service using a subprocess.
+    Starts the OpenSerp search backend service using a subprocess for Linux.
     """
 
     try:
@@ -70,6 +71,9 @@ def main(options):
     if options.start:
         print(start_openserp_service())
 
+    elif options.start_termux:
+        print(start_openserp_service(termux_working_directory))
+
     elif options.stop and options.pid:
         print(stop_openserp_service(options.pid))
 
@@ -80,6 +84,7 @@ def main(options):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Manage the OpenSerp search backend service.")
     parser.add_argument("--start", action="store_true", help="Start the OpenSerp service.")
+    parser.add_argument("--start-termux", action="store_true", help="Start the OpenSerp service in Termux environment.")
     parser.add_argument("--stop", action="store_true", help="Stop the OpenSerp service.")
     parser.add_argument("--pid", type=str, help="PID of the OpenSerp service to stop.")
     main(parser.parse_args())
