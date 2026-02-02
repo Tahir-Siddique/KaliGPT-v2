@@ -2,7 +2,7 @@
 
 # kaligpt Ollama Agent
 # /agent/ollama.py
-# Updated: 1 Feb 2026
+# Updated: 2 Feb 2026
 
 
 import sys
@@ -43,7 +43,7 @@ def initialize_configs():
         TOOL_FUNCTION_MAP = {func.__name__: func for func in tools} if tools else {}
 
     except Exception as e:
-        print(f"Failed to initialize Ollama Agent: {e}\n OLLAMA_API_URL: {OLLAMA_API_URL}")
+        print(f"Failed to initialize Ollama Agent: {e}\n[!] OLLAMA_API_URL may be misconfigured or unreachable.")
         sys.exit(1)
 
 
@@ -87,24 +87,24 @@ async def ask(user_input, history, tools):
     while True:
         try:
             # Get the async iterator for streaming response
-            stream = await client.chat(
+            response = await client.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
                 tools=tools,
                 think=True,
-                stream=True  # ← Enable streaming
+                stream=False  # ← Enable streaming
             )
 
             full_content = ""
             tool_calls = []
 
             # Process streamed chunks
-            async for chunk in stream:
-                if chunk.message.content:
-                    # print(chunk.message.content, end="", flush=True)
-                    full_content += chunk.message.content
-                if chunk.message.tool_calls:
-                    tool_calls.extend(chunk.message.tool_calls)
+
+            if response.message.content:
+                # print(chunk.message.content, end="", flush=True)
+                full_content += response.message.content
+            if response.message.tool_calls:
+                tool_calls.extend(response.message.tool_calls)
 
             # Append full assistant message to history
             messages.append({
@@ -142,7 +142,7 @@ async def main(prompt=None):
     initialize_configs()   # initialize configs for Ollama
 
     # Print tool banner
-    print(f"㉿ HackerX ( '{OLLAMA_MODEL}' )")
+    print(f"㉿ HackerX ( ollama/{OLLAMA_MODEL} )")
     while True:
         try:
             if prompt is None:
