@@ -2,7 +2,7 @@
 
 # /agents/openrouter.py
 # KaliGPT OpenRouter Agent
-# Updated: 27 Jan 2026
+# Updated: 2 feb 2026
 
 # Agent to use AI Models via OpenRouter OpenAI API
 
@@ -225,7 +225,7 @@ def main(prompt=None):
   # Initialize chat history with system prompt
   chat_history: list = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-  print(f"㉿ HackerX ('{OPENROUTER_MODEL}')")
+  print(f"㉿ HackerX ( openrouter/{OPENROUTER_MODEL} )")
 
   while True:
     try:
