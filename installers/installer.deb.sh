@@ -4,7 +4,7 @@ USER_NAME=$(logname 2>/dev/null)
 
 # KaliGPT v1.3 Setup (check & install dependencies, create launcher) Script for Debian-based Systems
 # by SudoHopeX ( https://github.com/SudoHopeX )
-# Last Modified: 29 Jan 2026
+# Last Modified: 2 fEB 2026
 
 
 # Ensure script runs as root, prompt for sudo if needed
@@ -74,7 +74,7 @@ mkdir -p /opt/KaliGPT/
 # ----- KaliGPT v1.3 (HackerX) Source Cloning -----
 echo ""
 start_spinner "Cloning KaliGPT repository"
-git clone --branch hackerx --single-branch https://github.com/SudoHopeX/KaliGPT.git /opt/KaliGPT/ > /dev/null 2>&1
+git clone https://github.com/SudoHopeX/KaliGPT.git /opt/KaliGPT/ > /dev/null 2>&1
 stop_spinner "KaliGPT Repository Clone"
 
 # ----- Cloning and building OpenSerp binary -----
@@ -152,12 +152,10 @@ source /opt/KaliGPT/kaligpt_venv/bin/activate
 cd /opt/KaliGPT
 OPENSERP_PID=""  # Initialize for holding OpenSerp PID
 
-# start the openserp server in background
-start_openserp() {
-    cd /opt/KaliGPT/openserp/
-    nohup ./openserp serve > /dev/null 2>&1 &
-    OPENSERP_PID=$!
-    cd /opt/KaliGPT
+# start the openserp server in background via python
+st_openserp() {
+  OPENSERP_PID=$(python3 -m agents.utils.openserp_management.py --start)
+  # echo -e "\e[1;32m[✓] OpenSerp started with PID: $OPENSERP_PID\e[0m"
 }
 
 MODE="$1"
@@ -166,22 +164,22 @@ shift
 case "$MODE" in
 
         -g|--gemini)
-                start_openserp
+                st_openserp
                 python3 -m agents.gemini "$@"
                 ;;
 
         -o|--ollama)
-                start_openserp
+                st_openserp
                 python3 -m agents.ollama "$@"
                 ;;
 
         -or|--openrouter)
-                start_openserp
+                st_openserp
                 python3 -m agents.openrouter "$@"
                 ;;
 
         -c|--chatgpt)
-                start_openserp
+                st_openserp
                 python3 -m agents.chatgpt "$@"
                 ;;
 
@@ -195,7 +193,7 @@ case "$MODE" in
                 echo -e "\e[1;32m             - by SudoHopeX\e[0m"
                 echo ""
                 echo -e "\e[1;33mUsages:\e[0m"
-                echo "         kaligpt [MODE(Optional)] [Prompt (optional)]"
+                echo "         kaligpt [MODE] [Prompt]"
                 echo ""
                 echo -e "\e[1;33mMODES: \e[0m"
                 echo ""
@@ -209,6 +207,13 @@ case "$MODE" in
                 echo "    -v [--version]            =  show KaliGPT version and exit"
                 echo "    -lr [--list-providers]    = list KaliGPT available models"
                 echo "    -h [--help]               =  show this help message and exit"
+                echo ""
+                echo -e "\e[1;33mModel Management: \e[0m"
+                echo ""
+                echo "    /change model             = change to a different AI model"
+                echo "    /reset to default model   = reset to KaliGPT default AI model (Gemini)"
+                echo "    /set vendor default model = set default model for a specific vendor"
+                echo "    /list tools              = list available tools for AI Agent"
                 echo ""
                 echo -e "\e[1;33mExamples:\e[0m"
                 echo "     kaligpt  ( uses default model and will ask for prompt )"
@@ -260,19 +265,21 @@ case "$MODE" in
                 ;;
 
          *)
-                start_openserp
+                st_openserp
                 # Passing "$MODE" first ensures the first word is not lost if it was a prompt
                 python3 -m agents "$MODE" "$@"
                 ;;
 
 esac
-deactivate
 
-# Kill openserp via PID if running in backend at last
-if [ -n "$OPENSERP_PID" ] && kill -0 "$OPENSERP_PID" 2>/dev/null; then
-    kill "$OPENSERP_PID"
+# Stop openserp server via PID
+if [ -n "$OPENSERP_PID" ]; then
+  kill "$OPENSERP_PID" 2>/dev/null
+  # echo -e "\e[1;32m[✓] OpenSerp server with PID $OPENSERP_PID stopped.\e[0m"
 fi
 
+# Deactivate venv after execution
+deactivate
 EOF
 
 # Make launcher executable
