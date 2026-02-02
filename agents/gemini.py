@@ -28,7 +28,7 @@ def initialize_configs():
     global GEMINI_API_KEY, GEMINI_MODEL, client, TOOLS_INFO, TOOL_FUNCTION_MAP
     try:
         GEMINI_API_KEY = get_api_key("gemini")
-        GEMINI_MODEL = get_default_model() or get_ai_specific_default_model("gemini")
+        GEMINI_MODEL = get_ai_specific_default_model("gemini")
 
         if not GEMINI_API_KEY or 'AIza' not in GEMINI_API_KEY:
             print(f"[!] GEMINI API Key not Found. exiting!")
