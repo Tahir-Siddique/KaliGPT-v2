@@ -274,7 +274,8 @@ esac
 
 # Stop openserp server via PID
 if [ -n "$OPENSERP_PID" ]; then
-  kill "$OPENSERP_PID" 2>/dev/null
+  # kill all its child processes first and then the main process
+  pkill -9 -P $OPENSERP_PID > /dev/null 2>&1 && kill -9 $OPENSERP_PID > /dev/null 2>&1
   # echo -e "\e[1;32m[✓] OpenSerp server with PID $OPENSERP_PID stopped.\e[0m"
 fi
 
