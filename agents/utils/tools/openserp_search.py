@@ -2,7 +2,7 @@
 
 # /agents/utils/tools/openserp_search.py
 # SudoHopeX KaliGPT
-# Last updated: 1 fEB 2026
+# Last updated: 3 fEB 2026
 
 
 import requests
@@ -22,7 +22,7 @@ def check_search_connection(timeout: int = 10) -> bool:
 
     # perform a get request to test availability
     try:
-        response = requests.get(f"{DEFAULT_BASE_URL}/mega/search?text=test", timeout=timeout)
+        response = requests.get(f"{DEFAULT_BASE_URL}/mega/engines", timeout=timeout)
         return response.status_code == 200
 
     except requests.RequestException as re:
@@ -77,7 +77,6 @@ def keyword_search(keyword: str,
                 engines: str = "duckduckgo,",
                 limit: int = 10,
                 top_n: int = 5,
-                base_url: str = DEFAULT_BASE_URL,
                 timeout: int = 20
     ) -> list:
     """
@@ -88,7 +87,6 @@ def keyword_search(keyword: str,
     :param engines: search keyword in specific engines (optional, default="google,duckduckgo,bing")
     :param limit: Number of results to fetch (optional, default=11)
     :param top_n: number of results from top to return to llm
-    :param base_url: base url for api requests
     :param timeout: timeout for the requests
 
     :return: a list of search results in the format of [(title, link), (title, link), ...]
@@ -98,7 +96,7 @@ def keyword_search(keyword: str,
     blacklist = ["github.com"] # sites not to include in search results
 
     # full example query: GET http://localhost:7000/mega/search?text=SudoHopeX&engines=duckduckgo,bing&limit=20&date=20251005..20251005&lang=EN
-    url = f"{base_url}/mega/search?text={keyword}"
+    url = f"{DEFAULT_BASE_URL}/mega/search?text={keyword}"
 
     # Mandatory parameters with default values
     if language: url += f"&lang={language}"
