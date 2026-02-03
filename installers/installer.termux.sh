@@ -4,7 +4,7 @@ trap "kill $SPIN_PID 2>/dev/null" EXIT
 
 # KaliGPT v1.3 Setup (check & install dependencies, create launcher) Script for Termux
 # by SudoHopeX ( SudoHopeX )
-# Last Modified: 30 Jan 2026
+# Last Modified: 2 feb 2026
 
 
 # Global variables
@@ -230,7 +230,7 @@ esac
 
 # Clean openserp via PID if running in backend at last
 if [ -n "$OPENSERP_PID" ] && kill -0 "$OPENSERP_PID" 2>/dev/null; then
-    kill "$OPENSERP_PID"
+      pkill -9 -P $OPENSERP_PID > /dev/null 2>&1 && kill -9 $OPENSERP_PID > /dev/null 2>&1
 fi
 
 EOF
