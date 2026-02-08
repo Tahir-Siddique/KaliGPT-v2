@@ -4,7 +4,7 @@ USER_NAME=$(logname 2>/dev/null)
 
 # KaliGPT v1.3 Setup (check & install dependencies, create launcher) Script for Debian-based Systems
 # by SudoHopeX ( https://github.com/SudoHopeX )
-# Last Modified: 2 fEB 2026
+# Last Modified: 8 fEB 2026
 
 
 # Ensure script runs as root, prompt for sudo if needed
@@ -63,9 +63,9 @@ apt update > /dev/null 2>&1
 stop_spinner "System Update"
 
 
-# ---- checking and installing missing pkgs  -----
+# ---- checking and installing missing pkgs for KaliGPT & OpenSearchAPI -----
 echo ""
-install_if_missing python3 python3-pip python3-venv golang-go
+install_if_missing python3 python3-pip python3-venv chromium xvfb
 
 
 # ---- creating KaliGPT installation directory  ----
@@ -77,16 +77,12 @@ start_spinner "Cloning KaliGPT repository"
 git clone https://github.com/SudoHopeX/KaliGPT.git /opt/KaliGPT/ > /dev/null 2>&1
 stop_spinner "KaliGPT Repository Clone"
 
-# ----- Cloning and building OpenSerp binary -----
-start_spinner "Cloning OpenSerp repository"
-git clone https://github.com/karust/openserp.git /opt/KaliGPT/openserp/ > /dev/null 2>&1
-stop_spinner "OpenSerp repository clone"
+# ----- Creating OpenSearchAPI Install Dir & Cloning OpenSearchAPI source -----
+mkdir -p /opt/KaliGPT/OpenSearchAPI/
+start_spinner "Cloning OpenSearchAPI repository"
+git clone https://github.com/SudoHopeX/OpenSearchAPI.git /opt/KaliGPT/OpenSearchAPI/ > /dev/null 2>&1
+stop_spinner "OpenSearchAPI repository clone"
 
-start_spinner "Building OpenSerp binary"
-# FIX: Change directory to build the actual source
-cd /opt/KaliGPT/openserp/ && go build -o openserp . > /dev/null 2>&1
-cd - > /dev/null # Go back to previous directory
-stop_spinner "OpenSerp binary build"
 
 # ----- Installing Ollama and pulling model (if user wants) -----
 echo "" # Clean line
@@ -100,7 +96,7 @@ if [[ "$install_ollama" =~ ^[Yy]$ ]]; then
     stop_spinner "Ollama Installation"
 
     read -p "Enter Ollama model to install (default: llama3): " ollama_model
-    ollama_model=${ollama_model:-llama3} # default to llama3 if no input
+    ollama_model=${ollama_model:-qwen3:8b} # default to qwen3:8b if no input
 
     # FIX: Do not use start_spinner here so we can see Ollama own installation progress bar
     echo -e "\e[1;32m[+] Pulling Ollama model: $ollama_model (this may take a while)...\e[0m"
@@ -112,8 +108,8 @@ else
 fi
 
 # ----- Setting up KaliGPT Virtual Environment & installing python requirements -----
-sudo python3 -m venv /opt/KaliGPT/kaligpt_venv
-source /opt/KaliGPT/kaligpt_venv/bin/activate
+python3 -m venv /opt/KaliGPT/its_venv
+source /opt/KaliGPT/its_venv/bin/activate
 cd /opt/KaliGPT/
 
 echo ""
@@ -142,20 +138,19 @@ LAUNCHER_BIN_PATH="/usr/local/bin/kaligpt"
 # Create launcher
 echo ""
 start_spinner "Creating KaliGPT launcher at $LAUNCHER_BIN_PATH"
-sudo tee "$LAUNCHER_BIN_PATH" > /dev/null <<'EOF'
+tee "$LAUNCHER_BIN_PATH" > /dev/null <<'EOF'
 #!/bin/bash
 
 # KaliGPT v1.3 Launcher Script
 # by SudoHopeX ( https://github.com/SudoHopeX )
 
-source /opt/KaliGPT/kaligpt_venv/bin/activate
+source /opt/KaliGPT/its_venv/bin/activate
 cd /opt/KaliGPT
-OPENSERP_PID=""  # Initialize for holding OpenSerp PID
+OpenSearchAPI_PID=""  # Initialize for holding OpenSearchAPI PID
 
-# start the openserp server in background via python
-st_openserp() {
-  OPENSERP_PID=$(python3 -m agents.utils.openserp_management --start)
-  # echo -e "\e[1;32m[✓] OpenSerp started with PID: $OPENSERP_PID\e[0m"
+# start the OpenSearchAPI server in background
+st_opensearchapi() {
+  OpenSearchAPI_PID=$(opensearchapi --bg)
 }
 
 MODE="$1"
@@ -164,22 +159,22 @@ shift
 case "$MODE" in
 
         -g|--gemini)
-                st_openserp
+                st_opensearchapi
                 python3 -m agents.gemini "$@"
                 ;;
 
         -o|--ollama)
-                st_openserp
+                st_opensearchapi
                 python3 -m agents.ollama "$@"
                 ;;
 
         -or|--openrouter)
-                st_openserp
+                st_opensearchapi
                 python3 -m agents.openrouter "$@"
                 ;;
 
         -c|--chatgpt)
-                st_openserp
+                st_opensearchapi
                 python3 -m agents.chatgpt "$@"
                 ;;
 
@@ -265,35 +260,57 @@ case "$MODE" in
                 ;;
 
          *)
-                st_openserp
+                st_opensearchapi
                 # Passing "$MODE" first ensures the first word is not lost if it was a prompt
                 python3 -m agents "$MODE" "$@"
                 ;;
 
 esac
 
-# Stop openserp server via PID
-if [ -n "$OPENSERP_PID" ]; then
-  # kill all its child processes first and then the main process
-  pkill -9 -P $OPENSERP_PID > /dev/null 2>&1 && kill -9 $OPENSERP_PID > /dev/null 2>&1
-  # echo -e "\e[1;32m[✓] OpenSerp server with PID $OPENSERP_PID stopped.\e[0m"
+# Stop OpenSearchAPI server via kill PID
+if [ -n "$OpenSearchAPI_PID" ]; then
+  kill "$OpenSearchAPI_PID" > /dev/null 2>&1
 fi
 
 # Deactivate venv after execution
 deactivate
 EOF
 
-# Make launcher executable
+# Make KaliGPT launcher executable
 chmod +x "$LAUNCHER_BIN_PATH"
 stop_spinner "KaliGPT launcher creation"
 
-# Change ownership from root to the actual user who ran sudo
+
+# Create a simple launcher for starting OpenSearchAPI & give executable permissions
+tee /usr/local/bin/opensearchapi > /dev/null <<'EOF'
+#!/usr/bin/env bash
+
+# echo "SudoHopeX - OpenSearchAPI"
+
+source /opt/KaliGPT/its_venv/bin/activate
+
+if [ "$1" == "--bg" ]; then
+  python /opt/KaliGPT/OpenSearchAPI/app.py > /dev/null 2>&1 &
+  APP_ID=$!
+  echo "$APP_ID"
+else
+  python /opt/KaliGPT/OpenSearchAPI/app.py
+  APP_ID=$!
+  echo "OpenSearchAPI Started with PID: $APP_ID"
+fi
+
+deactivate
+EOF
+
+chmod +x /usr/local/bin/opensearchapi
+
+# ----- Change ownership of /opt/KaliGPT/ from root to the actual user who ran sudo -----
 chown -R "$USER_NAME":"$USER_NAME" /opt/KaliGPT/
 
-# Final Message
+# ----- Final Message -----
 echo -e "\e[1;32mKaliGPT v1.3 (HackerX) installed Successfully!\e[0m"
 echo -e "\e[1;33mYou can run KaliGPT using the command: \e[0m\e[1;32mkaligpt\e[0m"
 
-# test run with help flag
+# ----- Test run KaliGPT with help flag -----
 echo ""
 kaligpt --help
