@@ -1,8 +1,8 @@
 #!/env/bin/env python3
 
-# /agents/utils/tools/openserp_search.py
+# /agents/utils/tools/opensearchapi.py
 # SudoHopeX KaliGPT
-# Last updated: 8 fEB 2026
+# Last updated: 9 fEB 2026
 
 
 import requests
@@ -34,7 +34,6 @@ def safe_get_json(url: str, timeout: int = 30):
     resp = requests.get(url, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
-
 
 def parse_url_with_newspaper(url: str) -> str:
     """
@@ -74,7 +73,7 @@ def parse_url_with_newspaper(url: str) -> str:
 
 def keyword_search(keyword: str,
                 engines: str = "google",
-                top_n: int = 5,
+                top_n: int = 4,
                 timeout: int = 30
     ) -> list:
     """
@@ -89,7 +88,7 @@ def keyword_search(keyword: str,
         return [(None, None)] if no search results are found
     """
 
-    blacklist = ["github.com"] # sites not to include in search results
+    blacklist = ["github.com", "medium.com"] # sites not to include in search results
 
     # full example query: GET http://127.0.0.1:5000/mega/search?q=SudoHopeX&engines=duckduckgo,bing
     url = f"{DEFAULT_BASE_URL}/mega/search?q={keyword}"
@@ -99,31 +98,43 @@ def keyword_search(keyword: str,
 
     try:
         response = safe_get_json(url, timeout=timeout)
+        # print("Response: ", response)
+        results_by_engine = response.get("results", {})
+        # print("Results by engine: ", results_by_engine)
 
     except Exception as e:
-        print(f"Request failed: {e}")
+        # print(f"Request failed: {e}")
         return [(None, None)]
 
     # get the top n search results on the current page
     search_result = []
-    i = 0
-    while len(search_result) < top_n and i < len(response):
-        try:
-            # if any elements in the blacklist are in the link, skip the link
-            if any([item in response[i]["url"] for item in blacklist]):
-                i += 1
+
+    for engine, results in results_by_engine.items():  # will iterate for each engine's values
+        # print(f"Results for engine - {engine}: ", results)
+        for item in results:
+            # print("Item: ", item)
+            if len(search_result) >= top_n:
+                break
+
+            title = item.get("title")
+            link = item.get("link")
+
+            if not link or not title:
                 continue
-            results = response[i]
-            search_result.append((results["title"], results["url"]))
 
-        except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            i += 1
-    return search_result
+            # Blacklist check
+            if any(domain in link for domain in blacklist):
+                    continue
+
+            search_result.append((title, link))
+
+        if len(search_result) >= top_n:
+            break
+
+    return search_result if search_result else [(None, None)]
 
 
-def crawl_search(search_results: list[tuple[str | None]]) -> list[tuple[str | None]]:
+def crawl_search(search_results: list) -> list[tuple[str | None]]:
     """
     Crawls the search results into a JSON string as RAG.
     :param search_results: the search results returned by `keyword_search`
@@ -148,7 +159,7 @@ def crawl_search(search_results: list[tuple[str | None]]) -> list[tuple[str | No
             rag.append({"title": title, "link": link, "content": main_content})
 
         except Exception as e:
-            print(f"Request failed on {link}: {e}")
+            # print(f"Request failed on {link}: {e}")
             rag.append(
                 {"title": title, "link": link, "content": "Failed to retrieve content"}
             )
@@ -174,4 +185,3 @@ def search_as_RAG(list_of_keywords: list[str]) -> list:
 if __name__ == "__main__":
     print(check_search_connection())
     print(search_as_RAG(["SudoHopeX KaliGPT ai for Hackers"]))
-
