@@ -1,6 +1,6 @@
 [//]: # ( /requirements/global.md )
 [//]: # ( SudoHopeX: https://hope.is-a.dev, github.com/SudoHopeX )
-[//]: # ( Updated: 28 January 2026 )
+[//]: # ( Updated: 8 Feb 2026 )
 
 # KaliGPT Requirements
 This document lists all the requirements/dependencies for KaliGPT, categorized by their source.
@@ -14,22 +14,22 @@ This document lists all the requirements/dependencies for KaliGPT, categorized b
 
 
 ## GitHub Packages
-| Package                  | Description                               |
-|--------------------------|-------------------------------------------|
-| karust/**OpenSerp**      | for performing search queries freely.     |
-| SudoHopeX/**KaliGPT** 😉 | for using the KaliGPT itself              |
+| Package                     | Description                               |
+|-----------------------------|-------------------------------------------|
+| SudoHopeX/**OpenSearchAPI** | for performing search queries freely.     |
+| SudoHopeX/**KaliGPT** 😉    | for using the KaliGPT itself              |
 
 
 ## PyPI (python pip) Packages
-| Package           | Description                          |
-|-------------------|--------------------------------------|
-| `openai`          | accessing openai & OpenRouter models |
-| `google-genai`    | accessing google gemini models       |
-| `ollama`          | using ollama models                  |
-| `rich`            | for rich text output                 |
-| `requests`        | making HTTP requests                 |
-| `newspaper3k`     | parsing HTML                         |
-| `lxml_html_clean` | cleaning HTML                        |
+| Package                                                                        | Description                          |
+|--------------------------------------------------------------------------------|--------------------------------------|
+| `openai`                                                                       | accessing openai & OpenRouter models |
+| `google-genai`                                                                 | accessing google gemini models       |
+| `ollama`                                                                       | using ollama models                  |
+| `rich`                                                                         | for rich text output                 |
+| `requests`                                                                     | making HTTP requests                 |
+| `newspaper3k`,`lxml_html_clean`                                                | cleaning & parsing HTML              |
+| `beautifulsoup4`, `flask`, `ddgs`, `curl_cffi`, `nodriver`, `pyvirtualdisplay` | OpenSearchAPI dependency             |
 
 
 ## System Packages
@@ -40,13 +40,12 @@ This document lists all the requirements/dependencies for KaliGPT, categorized b
 | `python3-venv`                                                           | Managing & using virtual environments                                         | 
 | `python3-pip`                                                            | Installing Python dependencies                                                | 
 | `git`                                                                    | Cloning GitHub repositories                                                   |
-| `golang-go`                                                              | Building & using go based tools (i.e. OpenSerp)                               |
 | `bash`                                                                   | Installing KaliGPT, creating & using KaliGPT launcher                         |
 | `lixxml2`, `libxslt`                                                     | for building `lxml_html_clean`                                                |
 | `libjpeg-turbo`, `libpng`, `freetype`, `littlecms`,`openjpeg`, `libtiff` | for building `Pillow`                                                         | 
 | `make`, `pkg-config`, `clang`                                            | building packages like `Pillow`, `lxml`, `lxml_html_clean`, and `newspaper3k` |
 | `rust`                                                                   | for building `newspaper3k` dependencies                                       | 
-
+| `chromium`, `xvfb`                                                       | OpenSearchAPI dependency                                                      |
 
 ## Tools
 | Name                                                         | Description                                                               |
