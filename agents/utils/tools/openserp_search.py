@@ -2,7 +2,7 @@
 
 # /agents/utils/tools/openserp_search.py
 # SudoHopeX KaliGPT
-# Last updated: 3 fEB 2026
+# Last updated: 8 fEB 2026
 
 
 import requests
@@ -12,25 +12,25 @@ from newspaper import Article, Config
 # Define a realistic user agent
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36"
 
-DEFAULT_BASE_URL = "http://127.0.0.1:7000"
+DEFAULT_BASE_URL = "http://127.0.0.1:5000"
 
 
 def check_search_connection(timeout: int = 10) -> bool:
     """
-    checks if the OpenSerp search backend is available.
+    checks if the OpenSearchAPI search backend is available.
     """
 
     # perform a get request to test availability
     try:
-        response = requests.get(f"{DEFAULT_BASE_URL}/mega/engines", timeout=timeout)
+        response = requests.get(f"{DEFAULT_BASE_URL}", timeout=timeout)
         return response.status_code == 200
 
     except requests.RequestException as re:
-        print(f"OpenSerp Search Connection error\nEndpoint used: {DEFAULT_BASE_URL}\nError details: {re}")
+        print(f"OpenSearchAPI Search Connection error\nEndpoint used: {DEFAULT_BASE_URL}\nError details: {re}")
         return False    # any exception results as False
 
 
-def safe_get_json(url: str, timeout: int = 10):
+def safe_get_json(url: str, timeout: int = 30):
     resp = requests.get(url, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
@@ -73,19 +73,15 @@ def parse_url_with_newspaper(url: str) -> str:
 
 
 def keyword_search(keyword: str,
-                language: str = 'EN',
-                engines: str = "duckduckgo,",
-                limit: int = 10,
+                engines: str = "google",
                 top_n: int = 5,
-                timeout: int = 20
+                timeout: int = 30
     ) -> list:
     """
-    Performs Live search (in DuckDuckGO) via OpenSerp API.
+    Performs Live search via OpenSearchAPI.
 
     :param keyword: the keyword to search for
-    :param language: language specific search (optional, default=English)
-    :param engines: search keyword in specific engines (optional, default="google,duckduckgo,bing")
-    :param limit: Number of results to fetch (optional, default=11)
+    :param engines: search keyword in specific engines (optional, default="google")
     :param top_n: number of results from top to return to llm
     :param timeout: timeout for the requests
 
@@ -95,12 +91,10 @@ def keyword_search(keyword: str,
 
     blacklist = ["github.com"] # sites not to include in search results
 
-    # full example query: GET http://localhost:7000/mega/search?text=SudoHopeX&engines=duckduckgo,bing&limit=20&date=20251005..20251005&lang=EN
-    url = f"{DEFAULT_BASE_URL}/mega/search?text={keyword}"
+    # full example query: GET http://127.0.0.1:5000/mega/search?q=SudoHopeX&engines=duckduckgo,bing
+    url = f"{DEFAULT_BASE_URL}/mega/search?q={keyword}"
 
     # Mandatory parameters with default values
-    if language: url += f"&lang={language}"
-    if limit: url += f"&limit={limit}"
     if engines: url += f"&engines={engines}"
 
     try:
@@ -180,3 +174,4 @@ def search_as_RAG(list_of_keywords: list[str]) -> list:
 if __name__ == "__main__":
     print(check_search_connection())
     print(search_as_RAG(["SudoHopeX KaliGPT ai for Hackers"]))
+
