@@ -106,8 +106,8 @@ def update_default_provider(new_provider: str) -> bool:
 def get_available_ais() -> List[str]:
     """Returns a list of all configured AI provider vendors (e.g., 'gemini', 'chatgpt')."""
     data = _load_config()
-    # FIX: Use a list comprehension to exclude the 'default_model' key correctly
-    return [k for k in data.keys() if k != 'default_model']
+    # Use a list comprehension to exclude the 'default_model' & 'default_provider' key correctly
+    return [k for k in data.keys() if k != 'default_model' and k!='default_provider']
 
 
 # Function 4: Read and return API key of a specific AI
@@ -192,4 +192,5 @@ if __name__ == "__main__":
     # print("Claude API Key (After Update): ", get_api_key('claude'))
     #
     # update_default_model('llama3')
+
     # print("Default model (Global, after update): ", get_default_model())
