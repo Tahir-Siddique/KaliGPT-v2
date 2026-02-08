@@ -1,14 +1,15 @@
 #!/env/bin/env python3
 
 # /agents/utils/tools/__init__.py
-# Updated: 28 Jan 2026
+# Updated: 8 feb 2026
 
-from .openserp_search import check_search_connection, search_as_RAG, keyword_search
+from .opensearchapi import check_search_connection, search_as_RAG, keyword_search
 from .locals import get_local_server_content, execute_generic_linux_command
 
 def get_tools_info():
     """
     Returns a list of Python functions (tools) that the AI model can use.
+    The SDK automatically converts these into FunctionDeclarations.
     """
     # The list contains the Python function objects themselves!
 
