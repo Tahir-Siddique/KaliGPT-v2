@@ -2,7 +2,7 @@
 
 # /agents/openrouter.py
 # KaliGPT OpenRouter Agent
-# Updated: 2 feb 2026
+# Updated: 8 feb 2026
 
 # Agent to use AI Models via OpenRouter OpenAI API
 
@@ -67,155 +67,101 @@ def trim_history(history):
     rest = [m for m in history if m["role"] != "system"]
     return system + rest[-MAX_TURNS * 2:]
 
-def ask_without_tools(prompt, chat_history):
-  """Ask OpenRouter model without tools support."""
 
-  # printing info
-  print("[i] The current model doesn't supports tools. Making OpenRouter API call without tools support...")
+def execute_tool_calls(tool_calls):
+    """Executes tools and returns a list of OpenAI-formatted 'tool' messages."""
+    tool_messages = []
 
-  # Prepare messages for the API call
-  messages = []
+    for tool_call in tool_calls:
+        func_name = tool_call.function.name
+        call_id = tool_call.id
 
-  # Add existing chat history if available
-  if chat_history:
-    messages.extend(trim_history(chat_history))
-
-  # Add the new user message
-  messages.append({
-    "role": "user",
-    "content": prompt
-  })
-
-  try:
-    # Make the API call without tools support
-    completion = client.chat.completions.create(
-      model=OPENROUTER_MODEL,
-      messages=messages
-    )
-
-    # Get the response
-    response_msg = completion.choices[0].message
-
-    # Update chat history with assistant messages
-    chat_history.append({
-      "role": "assistant",
-      "content": response_msg.content
-    })
-
-    return response_msg.content, chat_history
-
-  except Exception as e:
-    # Handle API errors
-    error_response = f"API Error: {str(e)}"
-    chat_history.append({
-      "role": "assistant",
-      "content": error_response
-    })
-    return error_response, chat_history
-
-
-def ask(prompt, chat_history,  tools=TOOLS_INFO):
-  """Ask OpenRouter model with tools support."""
-
-  # Prepare messages for the API call
-  messages = []
-
-  # Add existing chat history if available
-  if chat_history:
-    messages.extend(trim_history(chat_history))
-
-  # Add the new user message
-  messages.append({
-    "role": "user",
-    "content": prompt
-  })
-
-  try:
-    # Make the API call with tools support
-    completion = client.chat.completions.create(
-      extra_headers={
-        "HTTP-Referer": "HackerX (KaliGPT v1.3)", # Optional. Site URL for rankings on openrouter.ai.
-        "X-Title": "https://github.com/SudoHopeX/KaliGPT", # Optional. Site title for rankings on openrouter.ai.
-      },
-      extra_body={},
-      model=OPENROUTER_MODEL,
-      messages=messages,
-      tools=tools,
-      tool_choice="auto" if tools else "none"
-    )
-
-    # Get the response
-    response_msg = completion.choices[0].message
-
-    # Update chat history with user message
-    chat_history.append({
-      "role": "user",
-      "content": prompt
-    })
-
-    # Handle tool calls if present
-    if hasattr(response_msg, 'tool_calls') and response_msg.tool_calls:
-      # Add assistant message with tool calls to history
-      chat_history.append({
-        "role": "assistant",
-        "content": None,
-        "tool_calls": response_msg.tool_calls
-      })
-
-      for tool_call in response_msg.tool_calls:
-        name = tool_call.function.name
         try:
-          tool_args = json.loads(tool_call.function.arguments)
+            func_args = json.loads(tool_call.function.arguments)
+            print(f"\n[HackerX Tool Use] name: {func_name}, args: {func_args}")
         except Exception as e:
-          print(f"[!] Error parsing tool arguments: {e}")
-          tool_args = {}
+            print(f"[!] Error parsing tool arguments: {e}")
+            func_args = {}
 
-        tool_fn = TOOL_FUNCTION_MAP.get(name)
-
+        tool_fn = TOOL_FUNCTION_MAP.get(func_name)
         if not tool_fn:
-          result = f"Tool '{name}' not found"
+            result = f"Error: Tool '{func_name}' not found"
         else:
-          try:
-            result = tool_fn(**tool_args)
-          except Exception as e:
-            result = f"Tool error: {e}"
+            try:
+                result = tool_fn(**func_args)
+            except Exception as e:
+                result = f"Tool execution error: {e}"
 
-        chat_history.append({
-          "role": "tool",
-          "tool_call_id": tool_call.id,
-          "content": str(result)
+        # Correct OpenAI/OpenRouter Tool Message format
+        tool_messages.append({
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": func_name,
+            "content": str(result)
         })
 
-      follow_up = client.chat.completions.create(
-        model=OPENROUTER_MODEL,
-        messages=trim_history(chat_history),
-        tools=tools,
-        tool_choice="auto"
-      )
+    return tool_messages
 
-      response_msg = follow_up.choices[0].message
 
-    # Add final assistance response to chat history
-    if response_msg.content:
-      chat_history.append({
-          "role": "assistant",
-          "content": response_msg.content
-      })
+def ask(prompt, chat_history, tools=TOOLS_INFO):
+    """Ask OpenRouter model with recursive tool support and proper history."""
 
-      return response_msg.content, chat_history
+    # Add the user message to the working set (don't append to persistent history yet)
+    messages = trim_history(chat_history) + [{"role": "user", "content": prompt}]
 
-  except Exception as e:
-    # Handle API errors
-    error_response = f"API Error: {str(e)}"
+    try:
+        # Step 1: Initial Request
+        completion = client.chat.completions.create(
+            model=OPENROUTER_MODEL,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto" if tools else "none"
+        )
 
-    if "'No endpoints found that support tool use" in error_response:
-        return ask_without_tools(prompt, chat_history)
+        response_msg = completion.choices[0].message
 
-    chat_history.append({
-      "role": "assistant",
-      "content": error_response
-    })
-    return error_response, chat_history
+        # Step 2: Tool Handling Loop (Handles nested/parallel calls)
+        while response_msg.tool_calls:
+            # Add the model's request to call tools to the history
+            messages.append(response_msg)
+
+            # Execute tools and get "tool" role messages
+            tool_results = execute_tool_calls(response_msg.tool_calls)
+            messages.extend(tool_results)
+
+            # Get the follow-up from the model
+            follow_up = client.chat.completions.create(
+                model=OPENROUTER_MODEL,
+                messages=messages,
+                tools=tools
+            )
+            response_msg = follow_up.choices[0].message
+
+        # Step 3: Finalize History
+        final_text = response_msg.content or ""
+
+        # Update the actual history object for the next turn
+        chat_history.append({"role": "user", "content": prompt})
+        chat_history.append({"role": "assistant", "content": final_text})
+
+        return final_text, chat_history
+
+    except Exception as e:
+        error_msg = f"API/Logic Error: {str(e)}"
+        # print(f"[!] {error_msg}")
+
+        if "No endpoints found that support tool use" in error_msg:
+            completion = client.chat.completions.create(
+                model=OPENROUTER_MODEL,
+                messages=messages,
+            )
+
+            response = completion.choices[0].message
+            chat_history.append({"role": "assistant", "content": response.content})
+
+            return response.content, chat_history
+
+        return error_msg, chat_history  # Ensures we always return a tuple
 
 
 def main(prompt=None):
@@ -234,6 +180,7 @@ def main(prompt=None):
 
       if prompt.lower().replace("-", " ").strip() in AI_MANAGEMENT_OPTIONS:
         agent_management(prompt.lower().replace("-", " ").strip())
+        initialize_agent()
         prompt = None
         continue
 
@@ -253,6 +200,7 @@ def main(prompt=None):
 
     except Exception as err:
       print(f"\n   [!] An error occurred: {err}")
+      break
 
 
 if __name__ == "__main__":
