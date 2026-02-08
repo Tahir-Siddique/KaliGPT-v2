@@ -1,5 +1,5 @@
 [//]: #  ( SudoHopeX - KaliGPT )
-[//]: #  ( Updated: 30 Jan 2026 )
+[//]: #  ( Updated: 8 Feb 2026 )
 
 # HackerX ( KaliGPT v1.3 )
 
@@ -37,7 +37,8 @@
 ![CLI](https://img.shields.io/badge/CLI_Interface-4EAA25?style=for-the-badge&logo=gnumetadataterminal&logoColor=white)
 ![Tool Call](https://img.shields.io/badge/Tool_Calling-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![Online Search](https://img.shields.io/badge/Online_Search-4285F4?style=for-the-badge&logo=google&logoColor=white)
-[![Termux Support](https://img.shields.io/badge/Termux_Supported-EF3939?style=for-the-badge&logo=termux&logoColor=white)](https://github.com/SudoHopeX/KaliGPT/tree/hackerx)
+[![Online Search](https://img.shields.io/badge/OpenSearchAPI-4285F4?style=for-the-badge&logo=globe&logoColor=black)](https://github.com/SudoHopeX/OpenSearchAPI)
+![Termux Support](https://img.shields.io/badge/Termux_Supported-EF3939?style=for-the-badge&logo=termux&logoColor=white)
 </div>
 
 ------
