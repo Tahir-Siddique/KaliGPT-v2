@@ -8,7 +8,7 @@ Please take a moment to review this document to ensure a smooth and effective co
 
 ## 📜 Code of Conduct
 
-This project is governed by the [Non-commercial + MIT LICENSE](https://github.com/SudoHopeX/KaliGPT/blob/main/LICENSE). By participating, you are expected to uphold a welcoming and respectful environment. Please be considerate of others and their perspectives. Abuse, harassment, or disrespectful behavior will not be tolerated.
+This project is governed by the [Non-commercial + MIT LICENSE](https://github.com/SudoHopeX/KaliGPT/blob/hackerx/LICENSE). By participating, you are expected to uphold a welcoming and respectful environment. Please be considerate of others and their perspectives. Abuse, harassment, or disrespectful behavior will not be tolerated.
 
 -----
 
@@ -25,8 +25,6 @@ If you find a bug, please help us by reporting it\!
       * **Environment:**
           * Linux Distribution (e.g., Kali, Debian)
           * Model used (e.g., Gemini, ChatGPT, Llama via Ollama)
-          * Output of `bash --version`
-
 -----
 
 ## ✨ Suggesting Enhancements
@@ -44,7 +42,7 @@ We gladly accept code contributions via **Pull Requests (PRs)**.
 
 ### 📝 Development Setup
 
-KaliGPT is primarily a **Shell (Bash) script** with supporting **Python** modules.
+KaliGPT is primarily a **Python** module with **bash** setup & launcher script.
 
 1.  **Fork the Repository:** Fork the main [SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT) repository.
 2.  **Clone Your Fork:**
@@ -60,7 +58,7 @@ KaliGPT is primarily a **Shell (Bash) script** with supporting **Python** module
     ```
 4.  **Install Dependencies:** Run the project's installer to set up the necessary environment for testing.
     ```bash
-    bash kaligpt_unified.sh --help
+    bash kaligptinstaller.sh --help
     ```
 5.  **Make Changes:** Implement your feature or fix.
 
