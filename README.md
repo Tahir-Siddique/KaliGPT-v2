@@ -1,11 +1,14 @@
 [//]: #  ( SudoHopeX - KaliGPT )
 [//]: #  ( Updated: 8 Feb 2026 )
 
+<div align="center">
+  <a href="https://github.com/KaliGPT">
+    <img src="https://hope.is-a.dev/pages/project-docs/asset/hackerx-green-white-transparent.png" style="width:600px;height:auto;" alt="HackerX KaliGPT v1.3 - Made with L0V3 by SudoHopeX">
+  </a>
+</div>   
+
 # HackerX ( KaliGPT v1.3 )
-
-<!-- ![KaliGPT Logo](https://sudohopex.github.io/pages/project-docs/asset/KaliGPT-logo-transparent.png) -->
-
-**KaliGPT** : An AI Agent assistance in Linux CLI for Ethical Hacking & Cybersecurity to use AI with ease to learn and master CyberSecurity
+An Agentic AI assistance in Linux CLI for Ethical Hacking & Cybersecurity to use AI with ease to learn and master CyberSecurity
 
 **⭐ Star this repo if you found it helpful!**
 
