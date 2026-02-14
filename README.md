@@ -74,10 +74,10 @@ Usages:
         kaligpt [MODE(Optional)] [Prompt(Optional)]
 
 MODES:
-    -g  [--gemini]            =  use Gemini models (Online, tool call)
-    -o  [--ollama]            =  use local models via Ollama (Offline)
-    -or [--openrouter]        =  use OpenRouter models (Online, tool call)
-    -c  [--chatgpt]           =  use OpenAI models (Online, tool call)
+    -g  [--gemini]            =  use Gemini models (Online)
+    -o  [--ollama]            =  use local models via Ollama (Offline,cloud:online )
+    -or [--openrouter]        =  use OpenRouter models (Online)
+    -c  [--chatgpt]           =  use OpenAI models (Online)
     --web                     =  AIs official Web-Chat Opener (Online)
     --setup-keys              =  setup API keys for online models
     -u [--update]             =  update KaliGPT to latest version
@@ -85,6 +85,12 @@ MODES:
     -lr [--list-providers]    =  list KaliGPT available providers (vendors)
     -h  [--help]              =  show this help message and exit
     
+
+Model Management:
+    /change-model             = change to a different AI model
+    /reset-to-default-model   = reset to KaliGPT default AI model (Gemini)
+    /set-vendor-default-model = set default model for a specific vendor
+    /list-tools               = list available tools for AI Agent
 
 Examples:
      kaligpt  ( uses default model and will ask for prompt )
