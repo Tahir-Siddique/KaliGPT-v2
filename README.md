@@ -114,7 +114,7 @@ Read all Requirements [here](/requirements/globals.md)
 >
 > Access to this library and the use of information, materials (or portions thereof), is **<u>not intended</u>, and is <u>prohibited</u>, where such access or use violates applicable laws or regulations**. By no means the authors encourage or promote the unauthorized tampering with running systems. This can cause serious human harm and material damages.
 >
-> *By no means the authors of HackerX (KaliGPT v1.3) encourage or promote the unauthorized tampering with compute systems. Please don't use the source code in here for cybercrime. <u>Pentest for good instead</u>*. By downloading, using, or modifying this source code, you agree to the terms of the [`LICENSE`](LICENSE). <!-- and the limitations outlined in the [`DISCLAIMER`](DISCLAIMER) file. -->
+> *By no means the authors of HackerX (KaliGPT v1.3) encourage or promote the unauthorized tampering with compute systems. Please don't use the source code in here for cybercrime. <u>Pentest for good instead</u>*. By downloading, using, or modifying this source code, you agree to the terms of the [`LICENSE`](LICENSE) and the limitations outlined in the [`DISCLAIMER`](DISCLAIMER) file.
 
 
 ##   
