@@ -4,11 +4,12 @@ trap "kill $SPIN_PID 2>/dev/null" EXIT
 
 # KaliGPT v1.3 Setup (check & install dependencies, create launcher) Script for Termux
 # by SudoHopeX ( SudoHopeX )
-# Last Modified: 2 feb 2026
+# Last Modified: 14 feb 2026
 
 
 # Global variables
-BIN_PATH="/data/data/com.termux/files/usr/bin/kaligpt"
+KALIGPT_BIN_PATH="/data/data/com.termux/files/usr/bin/kaligpt"
+OPENSEARCHAPI_BIN_PATH="/data/data/com.termux/files/usr/bin/opensearchapi"
 INSTALL_DIR="/data/data/com.termux/files/usr/share/KaliGPT"
 
 
@@ -68,18 +69,11 @@ start_spinner "Cloning KaliGPT repository"
 git clone https://github.com/SudoHopeX/KaliGPT.git "$INSTALL_DIR/" > /dev/null 2>&1
 stop_spinner "KaliGPT repository clone"
 
-
-# ----- Cloning and setting up OpenSerp -----
-echo ""
-start_spinner "Cloning OpenSerp repository"
-git clone https://github.com/karust/openserp.git "$INSTALL_DIR/openserp/" > /dev/null 2>&1
-stop_spinner "OpenSerp repository clone"
-
-start_spinner "Building OpenSerp binary"
-cd "$INSTALL_DIR/openserp/" && go build -o openserp . > /dev/null 2>&1
-cd ..
-stop_spinner "OpenSerp binary build"
-
+# ----- Creating OpenSearchAPI Install Dir & Cloning OpenSearchAPI source -----
+mkdir -p "$INSTALL_DIR/OpenSearchAPI/"
+start_spinner "Cloning OpenSearchAPI repository"
+git clone https://github.com/SudoHopeX/OpenSearchAPI.git /opt/KaliGPT/OpenSearchAPI/ > /dev/null 2>&1
+stop_spinner "OpenSearchAPI repository clone"
 
 # ----- Installing pip requirements -----
 echo ""
@@ -100,8 +94,8 @@ fi
 
 # ----- Creating launcher -----
 echo ""
-start_spinner "Creating KaliGPT launcher at $BIN_PATH"
-cat << EOF > "$BIN_PATH"
+start_spinner "Creating KaliGPT launcher at $KALIGPT_BIN_PATH"
+cat << EOF > "$KALIGPT_BIN_PATH"
 #!/bin/bash
 export PYTHONPATH="\$PYTHONPATH:$INSTALL_DIR"
 INSTALL_DIR="$INSTALL_DIR"
@@ -114,34 +108,33 @@ MODE="\$1"
 shift
 
 cd "\$INSTALL_DIR/"
-OPENSERP_PID=""  # Initialize for holding OpenSerp PID
+OPENSEARCHAPI_PID=""  # Initialize for holding OpenSerp PID
 
 # start the openserp server in background
-start_openserp() {
-    OPENSERP_PID=$(python -m agents.utils.openserp_management --start-termux)
-   # echo -e "\e[1;32m[✓] OpenSerp started with PID: $OPENSERP_PID\e[0m"
+start_opensearchapi() {
+    OPENSEARCHAPI_PID=$(opensearchapi --bg)
 }
 
 case "\$MODE" in
 
         -g|--gemini)
-                start_openserp
+                start_opensearchapi
                 python3 -m agents.gemini "\$@"
                 ;;
 
         -o|--ollama)
                   # To use ollama on termux, user needs to provide ollama endpoint url but will be made available later
-                  start_openserp
+                  start_opensearchapi
                   python3 -m agents.ollama "\$@"
                   ;;
 
         -or|--openrouter)
-                  start_openserp
+                  start_opensearchapi
                   python3 -m agents.openrouter "\$@"
                   ;;
 
         -c|--chatgpt)
-                start_openserp
+                start_opensearchapi
                 python3 -m agents.chatgpt "$@"
                 ;;
 
@@ -223,21 +216,44 @@ case "\$MODE" in
             ;;
 
       *)
-            start_openserp
+            start_opensearchapi
             python3 -m agents "\$MODE" "\$@"
             ;;
 esac
 
-# Clean openserp via PID if running in backend at last
-if [ -n "$OPENSERP_PID" ] && kill -0 "$OPENSERP_PID" 2>/dev/null; then
-      pkill -9 -P $OPENSERP_PID > /dev/null 2>&1 && kill -9 $OPENSERP_PID > /dev/null 2>&1
+# Clean OpenSearchAPI via PID if running in backend at last
+if [ -n "OPENSEARCHAPI_PID" ] && kill -0 "$OPENSERP_PID" 2>/dev/null; then
+      kill "$OPENSEARCHAPI_PID" > /dev/null 2>&1
 fi
 
 EOF
 
 
-chmod +x "$BIN_PATH"
-stop_spinner "KaliGPT launcher created at $BIN_PATH"
+chmod +x "$KALIGPT_BIN_PATH"
+stop_spinner "KaliGPT launcher created at $KALIGPT_BIN_PATH"
+
+
+# Create a simple launcher for starting OpenSearchAPI & give executable permissions
+tee "$OPENSEARCHAPI_BIN_PATH" > /dev/null <<'EOF'
+#!/usr/bin/env bash
+
+# echo "SudoHopeX - OpenSearchAPI"
+INSTALL_DIR="/data/data/com.termux/files/usr/share/KaliGPT"
+
+if [ "$1" == "--bg" ]; then
+  python "$INSTALL_DIR"/OpenSearchAPI/app.py > /dev/null 2>&1 &
+  APP_ID=$!
+  echo "$APP_ID"
+else
+  python "$INSTALL_DIR"/OpenSearchAPI/app.py
+  APP_ID=$!
+  echo "OpenSearchAPI Started with PID: $APP_ID"
+fi
+
+deactivate
+EOF
+
+chmod +x "$OPENSEARCHAPI_BIN_PATH"
 
 echo -e "\e[1;32mKaliGPT v1.3 (HackerX) installation completed successfully!\e[0m"
 echo -e "\e[1;32mYou can run KaliGPT using the command:\e[0m \e[1;34mkaligpt\e[0m"
