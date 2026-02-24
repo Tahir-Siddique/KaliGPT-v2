@@ -2,7 +2,7 @@
 
 # /agents/gemini.py
 # KaliGPT Gemini_agent
-# Updated: 2 feb 2026
+# Updated: 24 feb 2026
 
 
 from google import genai
@@ -11,7 +11,7 @@ import sys
 import time
 
 from .utils.parse_n_print_response import parse_n_print_response
-from .utils.prompts import SYSTEM_PROMPT
+from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
 from .utils.agent_configs import get_api_key, get_default_model, get_ai_specific_default_model
 from .utils.tools import get_tools_info
 from .utils.agent_management import agent_management, AI_MANAGEMENT_OPTIONS
