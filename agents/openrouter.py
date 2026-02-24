@@ -2,7 +2,7 @@
 
 # /agents/openrouter.py
 # KaliGPT OpenRouter Agent
-# Updated: 8 feb 2026
+# Updated: 24 feb 2026
 
 # Agent to use AI Models via OpenRouter OpenAI API
 
@@ -15,7 +15,7 @@ from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 from .utils.parse_n_print_response import parse_n_print_response
 from .utils.tools import get_tools_info
 from .utils.openai_tool_adapter import openai_tool_adapter
-from .utils.prompts import SYSTEM_PROMPT
+from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
 
 # ----- Global Variables
 OPENROUTER_API_KEY: str
