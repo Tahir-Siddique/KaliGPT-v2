@@ -2,7 +2,7 @@
 
 # kaligpt Ollama Agent
 # /agent/ollama.py
-# Updated: 2 Feb 2026
+# Updated: 24 Feb 2026
 
 
 import sys
@@ -10,7 +10,7 @@ import asyncio
 from ollama import AsyncClient
 
 from .utils.parse_n_print_response import parse_n_print_response
-from .utils.prompts import SYSTEM_PROMPT
+from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
 from .utils.agent_configs import get_ai_specific_default_model, get_api_key
 from .utils.tools import get_tools_info
 from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
