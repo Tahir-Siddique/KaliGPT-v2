@@ -1,10 +1,12 @@
-#!/env/bin/env python3
+#!/usr/bin/env python3
 
 # /agents/utils/tools/__init__.py
-# Updated: 8 feb 2026
+# Updated: 22 feb 2026
 
 from .opensearchapi import check_search_connection, search_as_RAG, keyword_search
 from .locals import get_local_server_content, execute_generic_linux_command
+from .web_request_framework import web_request_analysis, get_raw_response
+
 
 def get_tools_info():
     """
@@ -18,7 +20,9 @@ def get_tools_info():
         keyword_search,
         search_as_RAG,
         get_local_server_content,
-        execute_generic_linux_command
+        execute_generic_linux_command,
+        web_request_analysis,
+        get_raw_response,
     ]
 
 
