@@ -3,7 +3,7 @@
 
 
 <div align="center">
-  <a href="https://github.com/KaliGPT">
+  <a href="https://github.com/SudoHopeX/KaliGPT">
     <img src="https://hope.is-a.dev/pages/project-docs/asset/hackerx-green-white-transparent.png" style="width:600px;height:auto;" alt="HackerX KaliGPT v1.3 - Made with L0V3 by SudoHopeX">
   </a>
 </div>   
