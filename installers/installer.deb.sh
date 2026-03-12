@@ -251,8 +251,8 @@ case "$MODE" in
 
         -v|--version)
                 # printing version info from git tags
-                # git describe --tags
-                echo "HackerX (KaliGPT v1.3.0)"
+                git describe --tags
+                # echo "HackerX (KaliGPT v1.3.0)"
                 ;;
 
         --setup-keys)
