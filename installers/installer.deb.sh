@@ -306,6 +306,7 @@ chmod +x /usr/local/bin/opensearchapi
 
 # ----- Change ownership of /opt/KaliGPT/ from root to the actual user who ran sudo -----
 chown -R "$USER_NAME":"$USER_NAME" /opt/KaliGPT/
+chmod 666 /opt/KaliGPT/agents/utils/api.config.json
 
 # ----- Final Message -----
 echo -e "\e[1;32mKaliGPT v1.3 (HackerX) installed Successfully!\e[0m"
