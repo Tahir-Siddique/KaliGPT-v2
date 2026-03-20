@@ -1,4 +1,6 @@
 # use JSON to store and retrieve api_keys, api_models and more
+# Updated: 20 March 2026
+
 
 import json
 from pathlib import Path
@@ -15,6 +17,7 @@ def _load_config() -> Dict[str, Any]:
 
     default_data = {
         "default_model": "gemini-2.5-flash",
+        "default_provider": "ollama",
         "gemini": {
             "api_key": "GEMINI_API_KEY",
             "default_model": "gemini-2.5-flash",
@@ -28,18 +31,13 @@ def _load_config() -> Dict[str, Any]:
         "ollama": {
             "api_key": "http://localhost:11434",  # URL for Ollama
             "default_model": "llama3",
-            "models": ["llama3", "mistral", "mixtral"]
-        },
-        "claude": {
-            "api_key": "Anthropic_API_Key",
-            "default_model": "claude-3-haiku",
-            "models": [ "claude-3-haiku", "claude-3-opus", "claude-instant-100k"]
+            "models": ["llama3", "mistral", "qwen3:8b"]
         },
         "openrouter": {
             "api_key": "OpenRouter_API_Key",
-            "default_model": "kwaipilot/kat-coder-pro:free",
+            "default_model": "z-ai/glm-4.5-air:free",
             "models": [
-                "kwaipilot/kat-coder-pro:free"
+                "z-ai/glm-4.5-air:free"
             ]
         }
     }
@@ -106,7 +104,7 @@ def update_default_provider(new_provider: str) -> bool:
 def get_available_ais() -> List[str]:
     """Returns a list of all configured AI provider vendors (e.g., 'gemini', 'chatgpt')."""
     data = _load_config()
-    # Use a list comprehension to exclude the 'default_model' & 'default_provider' key correctly
+    # FIX: Use a list comprehension to exclude the 'default_model' & 'default_provider' key correctly
     return [k for k in data.keys() if k != 'default_model' and k!='default_provider']
 
 
@@ -192,5 +190,4 @@ if __name__ == "__main__":
     # print("Claude API Key (After Update): ", get_api_key('claude'))
     #
     # update_default_model('llama3')
-
     # print("Default model (Global, after update): ", get_default_model())
