@@ -11,3 +11,4 @@ ddgs
 curl_cffi
 nodriver
 pyvirtualdisplay
+prompt_toolkit
