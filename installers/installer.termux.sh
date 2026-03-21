@@ -163,7 +163,6 @@ case "\$MODE" in
                 echo ""
                 echo "    /change-model             = change to a different AI model"
                 echo "    /reset-to-default-model   = reset to KaliGPT default AI model (Gemini)"
-                echo "    /set-vendor-default-model = set default model for a specific vendor"
                 echo "    /list-tools               = list available tools for AI Agent"
                 echo ""
                 echo -e "\e[1;33mExamples:\e[0m"
