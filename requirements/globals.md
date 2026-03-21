@@ -1,6 +1,6 @@
 [//]: # ( /requirements/global.md )
 [//]: # ( SudoHopeX: https://hope.is-a.dev, github.com/SudoHopeX )
-[//]: # ( Updated: 8 Feb 2026 )
+[//]: # ( Updated: 21 March 2026 )
 
 # KaliGPT Requirements
 This document lists all the requirements/dependencies for KaliGPT, categorized by their source.
@@ -30,6 +30,7 @@ This document lists all the requirements/dependencies for KaliGPT, categorized b
 | `requests`                                                                     | making HTTP requests                 |
 | `newspaper3k`,`lxml_html_clean`                                                | cleaning & parsing HTML              |
 | `beautifulsoup4`, `flask`, `ddgs`, `curl_cffi`, `nodriver`, `pyvirtualdisplay` | OpenSearchAPI dependency             |
+| `prompt_toolkit`                                                               | Interactive CLI Selector             | 
 
 
 ## System Packages
