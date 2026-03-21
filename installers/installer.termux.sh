@@ -78,7 +78,7 @@ stop_spinner "OpenSearchAPI repository clone"
 # ----- Installing pip requirements -----
 echo ""
 start_spinner "pip requirements Installing"
-pip3 install openai google-genai rich requests newspaper3k lxml_html_clean  > /dev/null 2>&1
+pip3 install openai google-genai rich requests newspaper3k lxml_html_clean prompt_toolkit > /dev/null 2>&1
 stop_spinner "pip Requirements Installation"
 
 # ----- API KEY configuration setup -----  ( if N skip, else start setup )
