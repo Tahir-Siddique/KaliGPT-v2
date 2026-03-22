@@ -13,7 +13,7 @@ from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 # --- Set API key ---
 def set_api_keys():
     try:
-        available_ais = get_available_ais()[1:]
+        available_ais = get_available_ais()
 
         ais = ""
         for ai in available_ais:
