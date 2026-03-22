@@ -6,7 +6,7 @@
   <a href="https://github.com/SudoHopeX/KaliGPT">
     <img src="https://hope.is-a.dev/pages/project-docs/asset/hackerx-green-white-transparent.png" style="width:600px;height:auto;" alt="HackerX KaliGPT v1.3 - Made with L0V3 by SudoHopeX">
   </a>
-</div>   
+</div>
 
 # HackerX ( KaliGPT v1.3 )
 **KaliGPT** : An Agentic assistance in Linux CLI for Ethical Hacking & Cybersecurity to use AI with ease to learn and master CyberSecurity
@@ -62,6 +62,7 @@
     ```
     curl -sL https://raw.githubusercontent.com/SudoHopeX/KaliGPT/refs/heads/hackerx/install.sh | bash
     ```
+    > Note: Use within permitted directory withou root user
 2. Install KaliGPT ( don't use sudo in Termux )
    ```
    sudo bash kaligptinstaller.sh
@@ -92,7 +93,6 @@ MODES:
 Model Management:
     /change-model             = change to a different AI model
     /reset-to-default-model   = reset to KaliGPT default AI model (Gemini)
-    /set-vendor-default-model = set default model for a specific vendor
     /list-tools               = list available tools for AI Agent
 
 Examples:
