@@ -62,7 +62,7 @@
     ```
     curl -sL https://raw.githubusercontent.com/SudoHopeX/KaliGPT/refs/heads/hackerx/install.sh | bash
     ```
-    > Note: Use within permitted directory withou root user
+    > Note: Use within permitted directory without root user
 2. Install KaliGPT ( don't use sudo in Termux )
    ```
    sudo bash kaligptinstaller.sh
