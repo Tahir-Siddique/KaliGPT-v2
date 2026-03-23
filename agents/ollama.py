@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 # kaligpt Ollama Agent
-# /agent/ollama.py
-# Updated: 20 March 2026
+# /agent/ollama_.py
+# Updated: 23 March 2026
 
 
 import sys
-import asyncio
 
-from ollama import AsyncClient
+from ollama import Client
 
 from .utils.parse_n_print_response import parse_n_print_response
 from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
@@ -16,6 +15,7 @@ from .utils.agent_configs import get_ai_specific_default_model, get_api_key
 from .utils.tools import get_tools_info
 from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 from .utils.openai_tool_adapter import openai_tool_adapter
+from .utils.ollama_tool_think_support_check import model_support_check
 
 
 # --- GLOBAL VARIABLES ---
@@ -23,19 +23,30 @@ OLLAMA_API_URL: str   # OLLAMA API URL as OLLAMA_API_KEY
 OLLAMA_MODEL: str
 TOOLS_INFO: list
 TOOL_FUNCTION_MAP: dict
-client: AsyncClient
-TOOL_SUPPORT: bool
-THINK_SUPPORT: bool
+client: Client
 SUPPORT_STAGE: int
 
+
+def initialize_agent():
+    global SUPPORT_STAGE, OLLAMA_API_URL
+    global OLLAMA_MODEL
+    OLLAMA_MODEL = get_ai_specific_default_model("ollama")
+
+    # Check Models for Tools & thinking support and specify SUPPORT_STAGE based on that
+    OLLAMA_API_URL = get_api_key("ollama")
+
+    SUPPORT_STAGE = model_support_check(OLLAMA_MODEL, OLLAMA_API_URL)
+
+
 def initialize_configs():
-    global OLLAMA_API_URL, OLLAMA_MODEL, TOOLS_INFO, TOOL_FUNCTION_MAP, client, TOOL_SUPPORT, THINK_SUPPORT, SUPPORT_STAGE
+    global OLLAMA_API_URL, TOOLS_INFO, TOOL_FUNCTION_MAP, client
     try:
         OLLAMA_API_URL = get_api_key("ollama")
-        OLLAMA_MODEL = get_ai_specific_default_model("ollama")
+
+        initialize_agent()
 
         # initialize ollama AsyncClient
-        client = AsyncClient(host=OLLAMA_API_URL)
+        client = Client(host=OLLAMA_API_URL)
 
         tools = get_tools_info()
         TOOLS_INFO = [openai_tool_adapter(f) for f in tools]
@@ -46,15 +57,6 @@ def initialize_configs():
         # --- TOOL EXECUTION HELPER (Your Original Function) ---
         TOOL_FUNCTION_MAP = {func.__name__: func for func in tools} if tools else {}
 
-        # Check Models for Tools & thinking support and specify SUPPORT_STAGE based on that
-        msg = [{"role": "user", "content": "Checking for Tool & Think Support"}]
-        TOOL_SUPPORT = check_tool_support(msg)
-        THINK_SUPPORT = check_think_support(msg)
-
-        if not (TOOL_SUPPORT and THINK_SUPPORT): SUPPORT_STAGE = 0
-        elif not TOOL_SUPPORT: SUPPORT_STAGE = 1
-        elif not THINK_SUPPORT: SUPPORT_STAGE = 2
-        elif THINK_SUPPORT and TOOL_SUPPORT: SUPPORT_STAGE = 3
 
     except Exception as e:
         print(f"Failed to initialize Ollama Agent: {e}\n[!] OLLAMA_API_URL may be misconfigured or unreachable.")
@@ -94,31 +96,13 @@ def execute_function_calls(function_calls):
 
     return response_parts
 
-async def check_tool_support(msg):
-    try:
-        await client.chat(model=OLLAMA_MODEL, messages=msg)
-        return True
 
-    except:
-        return False
-
-async def check_think_support(msg):
-    """
-    Check if the selected model supports
-    """
-    try:
-        await client.chat(model=OLLAMA_MODEL, messages=msg)
-        return True
-
-    except:
-        return False
-
-async def request_resp(messages, tools):
+def request_resp(messages, tools):
 
     match SUPPORT_STAGE:
         case 0:
             # No thinking & tools supported
-            response = await client.chat(
+            response = client.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
             )
@@ -126,7 +110,7 @@ async def request_resp(messages, tools):
 
         case 1:
             # Thinking supported
-            response = await client.chat(
+            response = client.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
                 think=True,
@@ -135,7 +119,7 @@ async def request_resp(messages, tools):
 
         case 2:
             # tools supported
-            response = await client.chat(
+            response = client.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
                 tools=tools,
@@ -144,7 +128,7 @@ async def request_resp(messages, tools):
 
         case _:
             # Both Thinking and Tools supported
-            response = await client.chat(
+            response = client.chat(
                 model=OLLAMA_MODEL,
                 messages=messages,
                 tools=tools,
@@ -153,7 +137,7 @@ async def request_resp(messages, tools):
             return response
 
 
-async def ask(user_input, history, tools):
+def ask(user_input, history, tools):
     """Ask Ollama Models for Response based on Support Stage
 
         Stage   Description
@@ -164,13 +148,14 @@ async def ask(user_input, history, tools):
     """
 
     messages = trim_history(history) + [{"role": "user", "content": user_input}]
+    full_content: str
 
     while True:
         try:
-            response = await request_resp(messages=messages, tools=tools)
+            response = request_resp(messages=messages, tools=tools)
 
-            full_content = ""
             tool_calls = []
+            full_content = ""
 
             if response.message.content:
                 # print(chunk.message.content, end="", flush=True)
@@ -196,12 +181,12 @@ async def ask(user_input, history, tools):
 
         except Exception as e:
             print(f"[!] Error: {e}")
-            break
+            sys.exit(1)
 
     return full_content, messages
 
 
-async def main(prompt=None):
+def main(prompt=None):
 
     # Initialize chat history with system prompt
     chat_history: list = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -217,11 +202,11 @@ async def main(prompt=None):
 
             if prompt.lower().replace("-", " ").strip() in AI_MANAGEMENT_OPTIONS:
                 agent_management(prompt.lower().replace("-", " ").strip())
-                initialize_configs()
+                initialize_agent()
                 prompt = None
                 continue
 
-            response, chat_history = await ask(
+            response, chat_history = ask(
                 history=chat_history,
                 user_input=prompt,
                 tools=TOOLS_INFO
@@ -242,6 +227,6 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1:
         args = ' '.join(sys.argv[1:])
-        asyncio.run(main(args))
+        main(args)
     else:
-        asyncio.run(main())
+        main()
