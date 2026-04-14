@@ -2,7 +2,7 @@
 
 # /agents/gemini.py
 # KaliGPT Gemini_agent
-# Updated: 24 feb 2026
+# Updated: 14 apr 2026
 
 
 from google import genai
@@ -16,12 +16,15 @@ from .utils.agent_configs import get_api_key, get_default_model, get_ai_specific
 from .utils.tools import get_tools_info
 from .utils.agent_management import agent_management, AI_MANAGEMENT_OPTIONS
 
-# --- GLOBAL VARIABLES ---
-GEMINI_API_KEY: str
-GEMINI_MODEL: str
-TOOLS_INFO: list
+# --- GLOBAL VARIABLES (with safe defaults) ---
+GEMINI_API_KEY: str | None = None
+GEMINI_MODEL: str | None = None
+TOOLS_INFO: list = []
 client = None
-TOOL_FUNCTION_MAP: dict
+TOOL_FUNCTION_MAP: dict = {}
+
+# Maximum tool-calling iterations to prevent infinite loops
+MAX_TOOL_LOOPS = 5
 
 
 def initialize_configs():
@@ -30,7 +33,8 @@ def initialize_configs():
         GEMINI_API_KEY = get_api_key("gemini")
         GEMINI_MODEL = get_ai_specific_default_model("gemini")
 
-        if not GEMINI_API_KEY or 'AIza' not in GEMINI_API_KEY:
+        # Validate API key is present (don't restrict prefix — not all keys start with 'AIza')
+        if not GEMINI_API_KEY:
             print(f"[!] GEMINI API Key not Found. exiting!")
             sys.exit(0)
 
@@ -56,7 +60,8 @@ def execute_function_calls(function_calls: list):
     print("\n[HackerX Tool Use] Owo! I found a tool I need to run! <3")
     for call in function_calls:
         func_name = call.name
-        func_args = dict(call.args)
+        # Safely handle None or non-dict args
+        func_args = dict(call.args) if call.args else {}
         if func_name in TOOL_FUNCTION_MAP:
             print(f"[HackerX Tool Use] Running tool: {func_name} with args: {func_args}")
             try:
@@ -79,27 +84,19 @@ def get_gemini_response(history: list[types.Content], new_input: str, tools: lis
     """
 
     # 1. Start the contents list by incorporating the entire history.
-    # The history contains all previous alternating user/model/tool turns.
     contents = history[:]
 
     # 2. Add the current user input as the new last message.
-    # This is the "newest" turn in the conversation.
     contents.append(
         types.Content(role="user", parts=[types.Part.from_text(text=new_input)])
     )
 
-    # 3. Determine the system instruction for the current turn.
-    # The system instruction should only be passed once per request, but you pass it
-    # for EVERY request to ensure the model *always* has the persona and core rules.
-    # NOTE: If you were using the Caching method from earlier, you would use that here instead
-    # of the system_instruction parameter. We stick to system_instruction for simplicity here.
-
-    # We use the full system instruction string here.
     current_system_instruction = SYSTEM_PROMPT
 
     # --- The Multi-Turn Tool Loop ---
-    # The entire process (prompt -> tool call -> tool result -> final answer) happens here.
-    while True:
+    loop_count = 0
+    while loop_count < MAX_TOOL_LOOPS:
+        loop_count += 1
 
         # 4. Call the Model with current contents and config
         response = client.models.generate_content(
@@ -107,43 +104,46 @@ def get_gemini_response(history: list[types.Content], new_input: str, tools: lis
             contents=contents,
             config=types.GenerateContentConfig(
                 tools=tools,
-                # Enable Chain-of-Thought (CoT) support with thinking_budget
                 thinking_config=types.ThinkingConfig(thinking_budget=1),
-                # Set the primary persona/rules here for every turn
-                system_instruction = current_system_instruction
+                system_instruction=current_system_instruction,
             ),
         )
 
-        # After the first turn, we don't need to re-send the instruction
-        # (It's still in the model's short-term memory for the current loop, but not history).
+        # After the first turn, don't re-send the instruction
         current_system_instruction = None
 
-        # 5. Check for Function Calls (Simplified check)
-        if response.function_calls:
+        # 5. Check for Function Calls (safe attribute access)
+        if hasattr(response, "function_calls") and response.function_calls:
 
             function_calls = response.function_calls
             function_response_parts = execute_function_calls(function_calls)
 
-            # Append the model's request (FunctionCall) to the contents
-            contents.append(response.candidates[0].content)
+            # Safely append candidate content
+            if response.candidates and len(response.candidates) > 0:
+                contents.append(response.candidates[0].content)
+            else:
+                contents.append(types.Content(role="model", parts=[types.Part.from_text(text="(no content)")]))
 
-            # Append the tool's result (FunctionResponse) to the contents
+            # Append the tool's result (FunctionResponse)
             contents.append(types.Content(role="tool", parts=function_response_parts))
 
-            # Loop continues: The next iteration sends the function results back to the model.
             time.sleep(0.5)
             continue
 
         # 6. No Function Call -> Final Text Response
         else:
-            # Append the final model response to the contents list (History)
+            # Safely append final model response
             if response.candidates and response.candidates[0].content:
                 contents.append(response.candidates[0].content)
 
-            # The updated contents list IS the new chat history.
             new_history = contents
 
-            return response.text, new_history
+            # response.text may be None when model only returns tool calls
+            return (response.text or ""), new_history
+
+    # If we exhausted max loops, return what we have
+    print(f"[!] Warning: Reached maximum tool call limit ({MAX_TOOL_LOOPS})")
+    return (response.text or ""), contents
 
 
 def main(prompt=None):
@@ -170,7 +170,6 @@ def main(prompt=None):
                 tools=TOOLS_INFO
             )
 
-            # print(f"\nAgent ➤ ")
             parse_n_print_response(gemini_response)
             prompt = None
 
