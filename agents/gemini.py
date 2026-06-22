@@ -33,7 +33,6 @@ def initialize_configs():
         GEMINI_API_KEY = get_api_key("gemini")
         GEMINI_MODEL = get_ai_specific_default_model("gemini")
 
-        # Validate API key is present (don't restrict prefix — not all keys start with 'AIza')
         if not GEMINI_API_KEY:
             print(f"[!] GEMINI API Key not Found. exiting!")
             sys.exit(0)
