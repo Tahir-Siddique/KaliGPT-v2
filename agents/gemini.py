@@ -83,6 +83,7 @@ def get_gemini_response(history: list[types.Content], new_input: str, tools: lis
     """
 
     # 1. Start the contents list by incorporating the entire history.
+    #     The history contains all previous alternating user/model/tool turns.
     contents = history[:]
 
     # 2. Add the current user input as the new last message.
@@ -90,6 +91,13 @@ def get_gemini_response(history: list[types.Content], new_input: str, tools: lis
         types.Content(role="user", parts=[types.Part.from_text(text=new_input)])
     )
 
+    """ 
+    3. Determine the system instruction for the current turn.
+    The system instruction should only be passed once per request, but we pass it
+    for EVERY request to ensure the model *always* has the persona and core rules.
+    
+    We use the full system instruction string here.
+    """
     current_system_instruction = SYSTEM_PROMPT
 
     # --- The Multi-Turn Tool Loop ---
@@ -150,7 +158,6 @@ def main(prompt=None):
 
     initialize_configs()   # initialize configs for gemini
 
-    # Print tool banner
     print(f"㉿ HackerX ( Gemini/{GEMINI_MODEL} )")
     while True:
         try:
