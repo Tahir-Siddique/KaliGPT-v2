@@ -1,6 +1,6 @@
 # !/bin/python3
 
-# KaliGPT v1.3 (HackerX)
+# HatsOff — by Tahir
 # /agents/__main__.py
 # Set AI API keys & launch default model agent, provide Configuration (reset model, change model etc.) management
 # Last Modified: 2 feb 2026

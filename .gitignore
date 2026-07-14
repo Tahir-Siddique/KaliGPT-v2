@@ -1,0 +1,95 @@
+# HatsOff / KaliGPT — Git ignore
+
+# --- Secrets & local config ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets/
+agents/utils/api.config.json
+agents/utils/api.config.local.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# --- Virtual environments ---
+.venv/
+venv/
+ENV/
+env/
+.env/
+.python-version
+
+# --- IDEs & editors ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.code-workspace
+
+# --- Local runtime / chat data ---
+*.db
+*.sqlite
+*.sqlite3
+.kaligpt/
+hatsoff*.log
+cursor-daemon*.log
+
+# --- Test / tool output ---
+.pytest_cache/
+graphify-out/
+.coverage
+
+# --- Node (cursor-sdk vendor noise if copied) ---
+node_modules/
+
+# --- Installer temp ---
+kaligptinstaller.sh
+*.tar.gz
+*.zip
+
+# --- OS ---
+Desktop.ini
+ehthumbs.db

@@ -60,7 +60,7 @@ def web_request_analysis(url: str, method: str='GET', payload: str=None, headers
 
     # Prepare headers
     req_headers = headers or {}
-    req_headers.setdefault('User-Agent', 'HackerX WebRequestFramework/1.0')
+    req_headers.setdefault('User-Agent', 'HatsOff WebRequestFramework/1.0')
 
     try:
         # Make request
@@ -273,7 +273,7 @@ def get_raw_response(url: str, method: str='GET', payload: str=None, headers: st
 
     # Prepare headers
     req_headers = headers or {}
-    req_headers.setdefault('User-Agent', 'HackerX WebRequestFramework/1.0')
+    req_headers.setdefault('User-Agent', 'HatsOff WebRequestFramework/1.0')
 
 
     try:

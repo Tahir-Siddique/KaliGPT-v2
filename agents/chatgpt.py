@@ -9,7 +9,7 @@ from openai import OpenAI
 import sys
 
 from .utils.parse_n_print_response import parse_n_print_response
-from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
+from .utils.prompts import HATSOFF_AGENT as SYSTEM_PROMPT
 from .utils.agent_configs import get_api_key, get_default_model, get_ai_specific_default_model
 from .utils.tools import get_tools_info
 from .utils.agent_management import agent_management, AI_MANAGEMENT_OPTIONS
@@ -119,7 +119,7 @@ def main(prompt=None):
     initialize_configs()   # initialize configs for OpenAI ChatGPT
 
     # Print tool banner
-    print(f"㉿ HackerX ( openai/{OPENAI_MODEL} )")
+    print(f"㉿ HatsOff ( openai/{OPENAI_MODEL} )")
     while True:
         try:
             if prompt is None:
@@ -142,7 +142,7 @@ def main(prompt=None):
             prompt = None
 
         except KeyboardInterrupt:
-            print("\n   Exiting HackerX. See you later!")
+            print("\n   Exiting HatsOff. See you later!")
             break
 
         except Exception as err:

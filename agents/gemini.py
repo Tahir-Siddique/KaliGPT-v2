@@ -11,7 +11,7 @@ import sys
 import time
 
 from .utils.parse_n_print_response import parse_n_print_response
-from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
+from .utils.prompts import HATSOFF_AGENT as SYSTEM_PROMPT
 from .utils.agent_configs import get_api_key, get_default_model, get_ai_specific_default_model
 from .utils.tools import get_tools_info
 from .utils.agent_management import agent_management, AI_MANAGEMENT_OPTIONS
@@ -56,13 +56,13 @@ def initialize_configs():
 
 def execute_function_calls(function_calls: list):
     response_parts = []
-    print("\n[HackerX Tool Use] Owo! I found a tool I need to run! <3")
+    print("\n[HatsOff Tool Use] Owo! I found a tool I need to run! <3")
     for call in function_calls:
         func_name = call.name
         # Safely handle None or non-dict args
         func_args = dict(call.args) if call.args else {}
         if func_name in TOOL_FUNCTION_MAP:
-            print(f"[HackerX Tool Use] Running tool: {func_name} with args: {func_args}")
+            print(f"[HatsOff Tool Use] Running tool: {func_name} with args: {func_args}")
             try:
                 result_text = TOOL_FUNCTION_MAP[func_name](**func_args)
             except Exception as e:
@@ -72,7 +72,7 @@ def execute_function_calls(function_calls: list):
         response_parts.append(
             types.Part.from_function_response(name=func_name, response={"result": result_text})
         )
-        print(f"[HackerX Tool Use] Tool result ready to send back.")
+        print(f"[HatsOff Tool Use] Tool result ready to send back.")
     return response_parts
 
 
@@ -158,7 +158,7 @@ def main(prompt=None):
 
     initialize_configs()   # initialize configs for gemini
 
-    print(f"㉿ HackerX ( Gemini/{GEMINI_MODEL} )")
+    print(f"㉿ HatsOff ( Gemini/{GEMINI_MODEL} )")
     while True:
         try:
             if prompt is None:
@@ -180,7 +180,7 @@ def main(prompt=None):
             prompt = None
 
         except KeyboardInterrupt:
-            print("\n   Exiting HackerX. See you later!")
+            print("\n   Exiting HatsOff. See you later!")
             break
 
         except Exception as err:

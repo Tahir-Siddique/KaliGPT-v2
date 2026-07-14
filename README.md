@@ -1,127 +1,155 @@
-[//]: #  ( SudoHopeX - KaliGPT )
-[//]: #  ( Updated: 14 feb 2026 )
+# HatsOff
 
+**Kali Linux–oriented AI assistant for authorized penetration testing** — desktop chat + CLI.
 
-<div align="center">
-  <a href="https://github.com/SudoHopeX/KaliGPT">
-    <img src="https://hope.is-a.dev/pages/project-docs/asset/hackerx-green-white-transparent.png" style="width:600px;height:auto;" alt="HackerX KaliGPT v1.3 - Made with L0V3 by SudoHopeX">
-  </a>
-</div>
+HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: multi-provider AI, local chat history, streaming replies, and Kali-compatible command/script runners with mid-run prompts.
 
-# HackerX ( KaliGPT v1.3 )
-**KaliGPT** : An Agentic assistance in Linux CLI for Ethical Hacking & Cybersecurity to use AI with ease to learn and master CyberSecurity
+> **Authorized use only.** Use on labs, CTFs, and engagements you are allowed to test. See [DISCLAIMER.md](DISCLAIMER.md) and [LICENSE](LICENSE).
 
-### **⭐ Star this repo if you found it helpful!**
+<p align="center">
+  <img src="agents/desktop/static/hatsoff-mark.svg" alt="HatsOff" width="120" />
+</p>
 
+---
 
-## Badges
-<div align="center">
- 
-<!-- Repository Statistics -->
-[![Release](https://img.shields.io/github/v/tag/SudoHopeX/KaliGPT?label=Release&color=0078D4&style=for-the-badge&logo=github)](https://github.com/SudoHopeX/KaliGPT/tags)
-[![Stars](https://img.shields.io/github/stars/SudoHopeX/KaliGPT?label=Stars&color=FFD700&style=for-the-badge&logo=reverbnation&logoColor=black)](https://github.com/SudoHopeX/KaliGPT/stargazers)
-[![Forks](https://img.shields.io/github/forks/SudoHopeX/KaliGPT?label=Forks&color=28a745&style=for-the-badge&logo=github)](https://github.com/SudoHopeX/KaliGPT/network/members)
- 
-<!-- Traffic & Clones (Dynamic JSON) -->
-![Clones](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/SudoHopeX/KaliGPT/hackerx/clones_lifetime.json&query=$.message&label=Clones&color=A52A2A&style=for-the-badge&logo=git&logoColor=white)
-![Views](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/SudoHopeX/KaliGPT/hackerx/views_lifetime.json&query=$.message&label=Views&color=800080&style=for-the-badge&logo=github&logoColor=white)
+## Features
 
+| Area | What you get |
+|------|----------------|
+| **Desktop UI** | ChatGPT-style local app (`python -m agents.desktop`), maximized window when pywebview works |
+| **Providers** | Gemini, ChatGPT, Ollama, OpenRouter, LiteLLM, Cursor |
+| **Streaming** | Token streaming with typewriter + caret |
+| **Labs** | Run code blocks; **Run script (AI ordered)** with discover → ask → act on Kali bash |
+| **Inputs** | Mid-run dropdowns for interfaces/targets; UI-only ask steps |
+| **Persistence** | Chats in `~/.kaligpt/chats.db`; keys in local `api.config.json` (not committed) |
+| **CLI** | Classic KaliGPT CLI agents still available |
 
-<!-- Project & Community Badges -->
-[![License](https://img.shields.io/badge/License-Open_Source-green?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Contributions Welcomed](https://img.shields.io/badge/Contributions-Welcomed-violet?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/SudoHopeX/KaliGPT/issues/new)
-</div>
+---
 
-------
-<!-- Feature & Support Badges -->
-<div align="center">
- 
-![Automated Installation](https://img.shields.io/badge/Automated_Installation-0078D4?style=for-the-badge&logo=powershell&logoColor=white)
-![Flexible AI](https://img.shields.io/badge/Flexible_AI_Backend-FF6F00?style=for-the-badge&logo=deepmind&logoColor=white)
-![CLI](https://img.shields.io/badge/CLI_Interface-4EAA25?style=for-the-badge&logo=gnumetadataterminal&logoColor=white)
-![Tool Call](https://img.shields.io/badge/Tool_Calling-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Online Search](https://img.shields.io/badge/Online_Search-4285F4?style=for-the-badge&logo=google&logoColor=white)
-[![OpenSearchAPI](https://img.shields.io/badge/OpenSearchAPI-4285F4?style=for-the-badge&logo=globe&logoColor=black)](https://github.com/SudoHopeX/OpenSearchAPI)
-[![Termux Support](https://img.shields.io/badge/Termux_Supported-EF3939?style=for-the-badge&logo=termux&logoColor=white)](https://github.com/SudoHopeX/KaliGPT/tree/hackerx)
-</div>
+## Quick start (Kali Linux)
 
-------
-<!-- Available Backends-->
-<div align="center">
+```bash
+cd ~/Desktop/KaliGPT   # or your clone path
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install -r requirements/pip-requirements.txt
 
-![Gemini](https://img.shields.io/badge/Gemini-8E75FF?style=for-the-badge&logo=googlegemini&logoColor=white)
-![Ollama](https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white)
-![OpenRouter](https://img.shields.io/badge/OpenRouter-6566f1?style=for-the-badge&logo=openrouter&logoColor=white)
-![ChatGPT](https://img.shields.io/badge/ChatGPT-74aa9c?style=for-the-badge&logo=openai&logoColor=white)
-![LiteLLM](https://img.shields.io/badge/🚅_LiteLLM-7C3AED?style=for-the-badge&logoColor=white)
-<!-- ![Claude](https://img.shields.io/badge/Claude-D97757?style=for-the-badge&logo=anthropic&logoColor=white) -->
-</div>
+# first-time config (gitignored)
+cp agents/utils/api.config.example.json agents/utils/api.config.json
 
-## Installation
+python -m agents.desktop
+```
 
-1. Download KaliGPT Installer
-    ```
-    curl -sL https://raw.githubusercontent.com/SudoHopeX/KaliGPT/refs/heads/hackerx/install.sh | bash
-    ```
-    > Note: Use within permitted directory without root user
-2. Install KaliGPT ( don't use sudo in Termux )
-   ```
-   sudo bash kaligptinstaller.sh
-   ```
+Open **Settings** in the app and set API keys (or edit `agents/utils/api.config.json`).
 
-## KaliGPT Usages
-use command `kaligpt -h` to see below usages after installation
+### Desktop window vs browser
 
-```help
-  HackerX (KaliGPT v1.3) - Use AI in Linux via CLI easily
-                         - by SudoHopeX | Krishna Dwivedi
+```bash
+python -m agents.desktop              # window (needs GTK/gi) or falls back to browser
+python -m agents.desktop --browser    # force browser
+python -m agents.desktop --no-window  # API only → open http://127.0.0.1:8765
+```
 
-Usages:
-        kaligpt [MODE(Optional)] [Prompt(Optional)]
+**Native window on Kali** (fixes `No module named 'gi'`):
 
-MODES:
-    -g  [--gemini]            =  use Gemini models (Online)
-    -o  [--ollama]            =  use local models via Ollama (Offline,cloud:online )
-    -or [--openrouter]        =  use OpenRouter models (Online)
-    -c  [--chatgpt]           =  use OpenAI models (Online)
-    -ll [--litellm]           =  use 100+ providers via LiteLLM (Online)
-    --web                     =  AIs official Web-Chat Opener (Online)
-    --setup-keys              =  setup API keys for online models
-    -u [--update]             =  update KaliGPT to latest version
-    -v [--version]            =  show KaliGPT version and exit
-    -lr [--list-providers]    =  list KaliGPT available providers (vendors)
-    -h  [--help]              =  show this help message and exit
+```bash
+sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+# recreate venv WITH --system-site-packages (see above), then:
+python -m agents.desktop
+```
 
-Model Management:
-    /change-model             = change to a different AI model
-    /reset-to-default-model   = reset to KaliGPT default AI model (Gemini)
-    /list-tools               = list available tools for AI Agent
+---
 
-Examples:
-     kaligpt  ( uses default model and will ask for prompt )
-     kaligpt "Help me find XSS on target.com"
-     kaligpt -g "How to Scan a website for subdomains using tools"
-     kaligpt -or "Help me find XXS on a target.com"
-     kaligpt --web   (launches default AI model web Chat
+## Providers
+
+Configure in **Settings** or `agents/utils/api.config.json`:
+
+| ID | Notes |
+|----|--------|
+| `gemini` | Google AI Studio key |
+| `chatgpt` | OpenAI key |
+| `ollama` | Local URL (default `http://localhost:11434`) |
+| `openrouter` | OpenRouter key |
+| `litellm` | Routes via provider env vars |
+| `cursor` | Cursor API key + `cursor-sdk`; local agent bridge may be required |
+
+Cursor troubleshooting on Kali:
+
+```bash
+pip install -U cursor-sdk
+PYTHONPATH=. python -u -m agents.cursor_daemon   # should print {"ok":true,"ready":true}
+# optional: export KALIGPT_CURSOR_INPROCESS=1
+```
+
+---
+
+## Lab runner (desktop)
+
+1. Ask HatsOff for Kali commands / a workflow.
+2. **Run** on a code block — executes via Kali `/bin/bash` when available.
+3. **Run script (AI ordered)** — AI builds discover → ask → act steps:
+   - discovery commands run first
+   - mid-run **dropdown** for choices (iface, host, etc.)
+   - remaining steps use `{{placeholders}}`
+
+Only run against systems you are authorized to test.
+
+---
+
+## CLI (KaliGPT legacy)
+
+```bash
+python -m agents                 # default provider from config
+python -m agents.gemini
+python -m agents.chatgpt
+python -m agents.ollama
+python -m agents.openrouter
+python -m agents.litellm_provider
+python -m agents.cursor
+```
+
+Installer / `kaligpt` shim (upstream style): see [install.sh](install.sh) and [requirements/globals.md](requirements/globals.md).
+
+---
+
+## Tests
+
+```bash
+source .venv/bin/activate
+pip install pytest
+python -m pytest tests/ -q
+```
+
+---
+
+## Project layout
 
 ```
-<!-- Read README.md or Documentation at https://hope.is-a.dev/?path=kaligpt for more info.  -->
+agents/
+  desktop/           # HatsOff Flask UI + runner + SSE streaming
+  cursor*.py         # Cursor SDK daemon / worker
+  utils/             # config, prompts, tools
+  *.py               # CLI providers (gemini, chatgpt, …)
+docs/
+  DESKTOP.md         # Detailed desktop guide
+requirements/
+tests/
+```
 
-## Requirements
-Read all Requirements [here](/requirements/globals.md)
+More: [docs/DESKTOP.md](docs/DESKTOP.md) · [DEVELOPER.md](DEVELOPER.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md)
+
+---
+
+## Security notes
+
+- **Never commit** `agents/utils/api.config.json` (gitignored). Use the example file.
+- If a real API key was ever committed, **rotate it** in the provider dashboard.
+- Command runner executes on the host shell — review prompts before **Run**.
+
+---
 
 ## Disclaimer
-> [!WARNING]
-> :warning: HackerX (KaliGPT v1.3) is in active development, so don't expect it to work flawlessly. Instead, contribute by raising an issue or [sending a PR](https://github.com/SudoHopeX/KaliGPT/pulls).
->
-> Access to this library and the use of information, materials (or portions thereof), is **<u>not intended</u>, and is <u>prohibited</u>, where such access or use violates applicable laws or regulations**. By no means the authors encourage or promote the unauthorized tampering with running systems. This can cause serious human harm and material damages.
->
-> *By no means the authors of HackerX (KaliGPT v1.3) encourage or promote the unauthorized tampering with compute systems. Please don't use the source code in here for cybercrime. <u>Pentest for good instead</u>*. By downloading, using, or modifying this source code, you agree to the terms of the [`LICENSE`](LICENSE) and the limitations outlined in the [`DISCLAIMER`](DISCLAIMER) file.
 
+Pentest for good. Unauthorized access to systems is prohibited. See [DISCLAIMER.md](DISCLAIMER.md).
 
-##   
-<div align="center">
-  <a href="https://hope.is-a.dev">
-    <img src="https://hope.is-a.dev/img/made-with-love-by-sudohopex.png" style="width:300px;height:auto;" alt="Made with L0V3 by SudoHopeX">
-  </a>
-</div>   
+**HatsOff** desktop experience by **Tahir**. Built on the KaliGPT / HackerX agent lineage (CLI by SudoHopeX / Krishna Dwivedi).

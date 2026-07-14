@@ -1,11 +1,95 @@
-**KaliGPT** is crafted by **Krishna Dwivedi (SudoHopeX)**, an ethical hacker and open-source enthusiast, with a vision to revolutionize how security professionals interact with AI. 
-Fueled by personal intuition and hands-on experience in offensive security, he built KaliGPT to unify powerful AI models - `Gemini`, `Llama`, `Mistral`, and `ChatGPT` into a single, seamless *CLI tool for Linux*. 
+# Developer guide — HatsOff / KaliGPT
 
+HatsOff is the **desktop + lab runner** layer on top of the KaliGPT agent providers. Upstream CLI agents remain under `agents/*.py`.
 
-Designed for ethical hackers, OSINT investigators, penetration testers, and Learners in CLI (Command Line Interface). 
+## Who built what
 
+| Piece | Credit |
+|-------|--------|
+| HatsOff desktop (UI, streaming, Kali runner, branding) | Tahir |
+| KaliGPT / HackerX CLI agents, tools, installers | SudoHopeX (Krishna Dwivedi) and contributors |
 
-Currently, the developer is advancing the project toward `HackerX (KaliGPT v1.3)` - a next-gen evolution introducing *Tool calling support*, *online search with crawling support*, *Pretty print*, *optimized configuration management* to make AI-driven security workflows smarter, faster, and accessible to all. 
+## Stack
 
+- **UI:** static HTML/CSS/JS served by Flask (`agents/desktop/static/`)
+- **API:** Flask in `agents/desktop/server.py`
+- **Chat DB:** SQLite via `agents/desktop/chat_store.py` → `~/.kaligpt/chats.db`
+- **Providers:** `agents/{gemini,chatgpt,ollama,openrouter,litellm_provider,cursor}.py`
+- **Desktop dispatch:** `agents/desktop/provider_router.py` (streaming, no tools on stream path)
+- **Lab runner:** `agents/desktop/runner.py` (plan JSON, bash/-lc, mid-run `need_input`)
+- **Prompts:** `agents/utils/prompts.py` (`HATSOFF_AGENT`)
+- **Config:** `agents/utils/agent_configs.py` + local `api.config.json` (gitignored)
 
-This project stands as a beacon of ethical innovation - `Built for Hackers, by a emerging Hacker`. 
+## Local setup
+
+```bash
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements/pip-requirements.txt
+pip install pytest
+cp agents/utils/api.config.example.json agents/utils/api.config.json
+# put keys via Settings UI or edit the local config file
+```
+
+Never commit `agents/utils/api.config.json`.
+
+## Run
+
+```bash
+python -m agents.desktop
+python -m agents.desktop --browser
+python -m pytest tests/ -q
+```
+
+## Key modules
+
+### Desktop API (`agents/desktop/server.py`)
+
+| Route | Purpose |
+|-------|---------|
+| `GET /` | UI |
+| `GET /api/providers` | Provider list + models |
+| `GET/POST /api/conversations…` | Chat CRUD |
+| `POST …/messages` | Non-stream send (tests / fallback) |
+| `POST …/messages/stream` | SSE chat streaming |
+| `POST /api/run` | Single command |
+| `POST /api/run/plan` | AI ordered script (no execute) |
+| `POST /api/run/script/stream` | Execute with mid-run asks |
+| `GET /api/environment` | Kali/shell detection |
+| `GET/PUT /api/settings` | Config for Settings modal |
+
+### Streaming contract
+
+SSE events: `token`, `done`, `title`, `error` (chat); script events: `plan`, `step_start`, `step_done`, `need_input`, `finished`, `stopped`.
+
+### Cursor daemon
+
+`agents/cursor.py` spawns `python -u -m agents.cursor_daemon` and speaks JSON lines over stdin/stdout. Stderr is pumped to avoid pipe deadlocks. Ready handshake: `{"ok":true,"ready":true}`.
+
+## Coding norms
+
+- Prefer small, focused diffs.
+- Keep secrets out of the repo (`.gitignore` + example config).
+- Desktop streaming path skips tool loops (live tokens). Tool-using agents stay on CLI / non-stream send.
+- Runner commands must be Kali bash–friendly by default.
+- Add/adjust tests under `tests/` for store, API, and runner helpers.
+
+## Tests worth knowing
+
+- `tests/test_desktop_chat.py` — store, SSE mock stream, settings, runner helpers
+- `tests/test_cursor_provider.py` — Cursor worker/daemon plumbing (mocked)
+
+## Release checklist
+
+1. Placeholder keys only in example config  
+2. `pytest` green  
+3. README / docs paths still accurate  
+4. Rotate any key that ever leaked into git history  
+
+## Docs map
+
+- [README.md](README.md) — user overview  
+- [docs/DESKTOP.md](docs/DESKTOP.md) — desktop deep dive  
+- [CONTRIBUTING.md](CONTRIBUTING.md) — PR process  
+- [SECURITY.md](SECURITY.md) — reporting  
+- [DISCLAIMER.md](DISCLAIMER.md) — legal / ethics  

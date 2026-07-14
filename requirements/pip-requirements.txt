@@ -13,3 +13,5 @@ nodriver
 pyvirtualdisplay
 prompt_toolkit
 litellm
+cursor-sdk
+pywebview

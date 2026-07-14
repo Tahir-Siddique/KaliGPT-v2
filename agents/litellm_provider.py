@@ -12,7 +12,7 @@ from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 from .utils.parse_n_print_response import parse_n_print_response
 from .utils.tools import get_tools_info
 from .utils.openai_tool_adapter import openai_tool_adapter
-from .utils.prompts import WEB_BUG_BOUNTY_AGENT as SYSTEM_PROMPT
+from .utils.prompts import HATSOFF_AGENT as SYSTEM_PROMPT
 
 # ----- Global Variables
 LITELLM_MODEL: str
@@ -56,7 +56,7 @@ def execute_tool_calls(tool_calls):
 
         try:
             func_args = json.loads(tool_call.function.arguments)
-            print(f"\n[HackerX Tool Use] name: {func_name}, args: {func_args}")
+            print(f"\n[HatsOff Tool Use] name: {func_name}, args: {func_args}")
         except Exception as e:
             print(f"[!] Error parsing tool arguments: {e}")
             func_args = {}
@@ -130,7 +130,7 @@ def main(prompt=None):
 
     chat_history: list = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    print(f"㉿ HackerX ( litellm/{LITELLM_MODEL} )")
+    print(f"㉿ HatsOff ( litellm/{LITELLM_MODEL} )")
 
     while True:
         try:
@@ -153,7 +153,7 @@ def main(prompt=None):
             prompt = None
 
         except KeyboardInterrupt:
-            print("\n   Exiting HackerX. See you later!")
+            print("\n   Exiting HatsOff. See you later!")
             break
 
         except Exception as err:

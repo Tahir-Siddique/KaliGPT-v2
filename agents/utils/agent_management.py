@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# HackerX - Interactive Agent Management Module
+# HatsOff - Interactive Agent Management Module
 # file: agents/utils/agent_management.py
 # Updated: 21 March 2026
 
@@ -23,7 +23,7 @@ import requests
 DEFAULT_AI_MODEL: str
 SELECTED_VENDOR: str
 SELECTED_MODEL: str
-ALL_AI_PROVIDERS = ["gemini", "chatgpt", "ollama", "openrouter", "litellm"]  # FETCHED LATER FOR UPDATED LIST
+ALL_AI_PROVIDERS = ["gemini", "chatgpt", "ollama", "openrouter", "litellm", "cursor"]  # FETCHED LATER FOR UPDATED LIST
 AI_MANAGEMENT_OPTIONS = ["/change model", "/reset to default model", "/list tools", "/help", "/exit", "/quit", "/bye"]
 console = Console(width=get_console_width())
 
@@ -85,7 +85,7 @@ def set_vendor_name():
 
     options = [(ai, ai) for ai in get_available_ais()]
     selected = interactive_select(
-        title="HackerX Vendor Selection",
+        title="HatsOff Vendor Selection",
         text="Usages: Use Arrow keys then ENTER to select model, TAB to switch..",
         options=options
     )
@@ -196,12 +196,12 @@ def reset_ai_model_to_default():
     for attempt in range(max_attempts):
         if update_default_model(DEFAULT_AI_MODEL) and update_default_provider("gemini"):
             data += f"\n{Colors.GREEN} [✓] Reset Success :{Colors.RESET} Default AI Model Now » {Colors.BOLD}{DEFAULT_AI_MODEL}{Colors.RESET}"
-            console.print(Panel(data, title="( HackerX - Reset to Default Model )", border_style="blue", padding=(1, 2)))
+            console.print(Panel(data, title="( HatsOff - Reset to Default Model )", border_style="blue", padding=(1, 2)))
             break
 
         if attempt == max_attempts - 1:
             data += f"\n{Colors.RED} [!] Failed to reset model after maximum attempts.{Colors.RESET}"
-            console.print(Panel(data, title="( HackerX - Reset to Default Model )", border_style="red", padding=(1, 2)))
+            console.print(Panel(data, title="( HatsOff - Reset to Default Model )", border_style="red", padding=(1, 2)))
 
 
 def print_all_available_tools():
@@ -213,7 +213,7 @@ def print_all_available_tools():
     console.print(
         Panel(
             table,
-            title="( HackerX - Available Tools )",
+            title="( HatsOff - Available Tools )",
             border_style="blue",
             padding=(1, 2)
         )
@@ -228,15 +228,15 @@ def print_agent_management_options():
     table1.add_row("", "")
 
     table2 = Table(title="General Commands", title_style="cyan", title_justify="left", show_header=False, box=None)
-    table2.add_row(f"{Colors.YELLOW}'/list tools'{Colors.RESET}", "List all available tools for HackerX agents")
+    table2.add_row(f"{Colors.YELLOW}'/list tools'{Colors.RESET}", "List all available tools for HatsOff agents")
     table2.add_row(f"{Colors.YELLOW}'/help'{Colors.RESET}", "Show this help message and exit{Colors.RESET}")
-    table2.add_row(f"{Colors.YELLOW}'/exit' | '/quit' | '/bye'{Colors.RESET}", "Exit HackerX agent")
+    table2.add_row(f"{Colors.YELLOW}'/exit' | '/quit' | '/bye'{Colors.RESET}", "Exit HatsOff agent")
     table2.add_row(f"{Colors.YELLOW}other input or prompt{Colors.RESET}", "Interact with the AI agent using prompts")
 
     console.print(
         Panel(
             Group(table1, table2),
-            title="( HackerX - Help )",
+            title="( HatsOff - Help )",
             border_style="blue",
             padding=(1, 2),
             subtitle="[ Use these commands while in 'Interaction Mode' with agents! ]",
@@ -249,11 +249,11 @@ def agent_management_options():
         ("/reset to default model", "/reset to default model  →  Reset to built-in model"),
         ("/list tools",             "/list tools              →  List all available tools"),
         ("/help",                   "/help                    →  Show help menu"),
-        ("/exit",                   "/exit                    →  Exit HackerX")
+        ("/exit",                   "/exit                    →  Exit HatsOff")
     ]
 
     selected = interactive_select(
-        title="HackerX Help Menu",
+        title="HatsOff Help Menu",
         text="Usages: Use Arrow keys then ENTER to select model, TAB to switch..",
         options=options
     )
@@ -280,7 +280,7 @@ def agent_management(task):
             agent_management_options()
 
         case "/exit" | "/quit" | "/bye":
-            print(f"\n  {Colors.GREEN}Exiting HackerX. See you later!{Colors.RESET}")
+            print(f"\n  {Colors.GREEN}Exiting HatsOff. See you later!{Colors.RESET}")
             sys.exit(0)
 
         case _:
