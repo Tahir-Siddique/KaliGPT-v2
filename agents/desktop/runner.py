@@ -454,8 +454,11 @@ def suggest_input_after_output(
         "You are driving an authorized pentest-lab script runner.\n"
         "A command just finished. Decide if the USER must answer something NOW "
         "before the next steps (choose interface, target from a list, port, yes/no, etc).\n"
-        "Prefer asking AFTER discovery commands (ip a, ifconfig, iwconfig, netstat, "
-        "nmap host list, ls, etc), using options taken from the output.\n"
+        "Prefer asking AFTER discovery commands (ip a, ifconfig, iwconfig, ip -br link, "
+        "nmap host list, airmon/iw list, etc), using options taken from the output.\n"
+        "If the workflow is Wi‑Fi/monitor-mode related, prefer wireless adapters "
+        "(wlan*, wlp*, wl*) — do NOT push Ethernet/VPN uplink ifaces unless the user "
+        "clearly needs them.\n"
         "Return ONLY JSON:\n"
         "{\n"
         '  "need_input": true|false,\n'
@@ -531,8 +534,9 @@ def plan_script_from_text(
         "Rules:\n"
         "- Prefer mid-run questions (type=ui) AFTER discovery commands, not a big form at start.\n"
         "- Use {{placeholders}} in later run steps; the UI will pause when they are still missing.\n"
-        "- options may be empty for ui steps if they will come from prior command output "
-        "(the runner/AI will extract choices then).\n"
+        "- After discovery output the runner may call AI again to build dropdown options "
+        "(Ethernet/other NICs usually stay up even if a Wi‑Fi iface enters monitor mode).\n"
+        "- For Wi‑Fi/monitor-mode work, prefer wireless interfaces in asks — not eth/VPN uplink cards.\n"
         "- For values that cannot be shell commands (choose iface, pick host, password), "
         "use type=ui — those run in the HatsOff UI, not the shell.\n"
         "- Order: recon/list → ask user → exploit/action.\n"
@@ -611,6 +615,7 @@ def run_script_stream(
     - type=ui → need_input (question in UI)
     - unresolved {{placeholders}} → need_input for those ids
     - after a successful run, optionally AI suggests a choice from output
+      (keeps working when Ethernet stays up while a Wi‑Fi iface is in monitor mode)
     """
     known = {str(k): str(v) for k, v in (values or {}).items()}
     rendered_plan = apply_inputs_to_steps(
@@ -701,6 +706,7 @@ def run_script_stream(
             "index": idx,
             "cmd": cmd,
             "note": note,
+            "message": "Running command…",
         }
         result = run_command(cmd, cwd=cwd, timeout=timeout)
         yield {"type": "step_done", "index": idx, **result}
@@ -718,6 +724,11 @@ def run_script_stream(
         ):
             combined = ((result.get("stdout") or "") + "\n" + (result.get("stderr") or "")).strip()
             if combined:
+                yield {
+                    "type": "step_progress",
+                    "index": idx,
+                    "message": "AI is reading output for the next choice…",
+                }
                 suggestion = suggest_input_after_output(
                     provider,
                     last_cmd=cmd,
@@ -743,5 +754,11 @@ def run_script_stream(
                         "values": known,
                     }
                     return
+                yield {
+                    "type": "step_progress",
+                    "index": idx,
+                    "message": "",
+                    "clear": True,
+                }
 
     yield {"type": "finished", "values": known}

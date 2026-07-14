@@ -324,6 +324,7 @@
         : [{ id: primaryId, label: spec.label, secret: spec.secret }];
       const options = (spec.options || []).map((o) => String(o)).filter(Boolean);
       const allowCustom = spec.allow_custom !== false;
+      const useChips = options.length > 0 && options.length <= 12;
 
       let html = `<div class="inline-ask-title">${escapeHtml(spec.label || "Your input")}</div>`;
       if (spec.reason) {
@@ -340,9 +341,61 @@
       const fieldsWrap = card.querySelector(".inline-ask-fields");
       let selectEl = null;
       let customInput = null;
+      let selectedChip = "";
 
-      // Best UX when AI provides choices: native dropdown
-      if (options.length) {
+      if (useChips) {
+        let customLabel = null;
+        const chips = document.createElement("div");
+        chips.className = "option-chips";
+        chips.setAttribute("role", "listbox");
+        chips.setAttribute("aria-label", spec.label || "Options");
+        options.forEach((opt) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "option-chip";
+          btn.setAttribute("role", "option");
+          btn.setAttribute("aria-selected", "false");
+          btn.textContent = opt;
+          btn.addEventListener("click", () => {
+            chips.querySelectorAll(".option-chip").forEach((b) => {
+              b.classList.remove("selected");
+              b.setAttribute("aria-selected", "false");
+            });
+            btn.classList.add("selected");
+            btn.setAttribute("aria-selected", "true");
+            selectedChip = opt;
+            if (customInput) customInput.value = "";
+          });
+          btn.addEventListener("dblclick", () => {
+            selectedChip = opt;
+            finish();
+          });
+          chips.appendChild(btn);
+        });
+        fieldsWrap.appendChild(chips);
+
+        if (allowCustom) {
+          customLabel = document.createElement("label");
+          customLabel.className = "input-field custom-value-field";
+          customLabel.innerHTML = `<span class="input-label">Or type a custom value</span>`;
+          customInput = document.createElement("input");
+          customInput.type = spec.secret ? "password" : "text";
+          customInput.name = `${primaryId}_custom`;
+          customInput.placeholder = "Custom value";
+          customInput.autocomplete = "off";
+          customInput.addEventListener("input", () => {
+            if (customInput.value.trim()) {
+              selectedChip = "";
+              chips.querySelectorAll(".option-chip").forEach((b) => {
+                b.classList.remove("selected");
+                b.setAttribute("aria-selected", "false");
+              });
+            }
+          });
+          customLabel.appendChild(customInput);
+          fieldsWrap.appendChild(customLabel);
+        }
+      } else if (options.length) {
         const label = document.createElement("label");
         label.className = "input-field";
         label.innerHTML = `<span class="input-label">Select an option</span>`;
@@ -351,7 +404,7 @@
         selectEl.name = primaryId;
         const placeholder = document.createElement("option");
         placeholder.value = "";
-        placeholder.textContent = `Choose… (${options.length} available)`;
+        placeholder.textContent = `Choose… (${options.length})`;
         placeholder.disabled = true;
         placeholder.selected = true;
         selectEl.appendChild(placeholder);
@@ -389,7 +442,6 @@
           });
         }
       } else {
-        // Free-text / multi-field (no option list)
         fields.forEach((field) => {
           const label = document.createElement("label");
           label.className = "input-field";
@@ -406,7 +458,10 @@
 
       const collect = () => {
         const values = {};
-        if (selectEl) {
+        if (useChips) {
+          const custom = customInput ? customInput.value.trim() : "";
+          values[primaryId] = custom || selectedChip;
+        } else if (selectEl) {
           let v = selectEl.value;
           if (v === "__custom__") {
             v = customInput ? customInput.value.trim() : "";
@@ -420,18 +475,30 @@
         return values;
       };
 
-      card.querySelector(".inline-cancel").addEventListener("click", () => resolve(null));
-      card.querySelector(".inline-ok").addEventListener("click", () => {
+      const finish = () => {
         const values = collect();
         const v = values[primaryId] || Object.values(values).find((x) => x);
         if (!v) {
-          alert(options.length ? "Please select an option." : "Please provide a value.");
+          card.classList.add("shake");
+          setTimeout(() => card.classList.remove("shake"), 360);
           return;
         }
         resolve(values);
+      };
+
+      card.querySelector(".inline-cancel").addEventListener("click", () => resolve(null));
+      card.querySelector(".inline-ok").addEventListener("click", finish);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          finish();
+        }
       });
 
-      if (selectEl) selectEl.focus();
+      if (useChips) {
+        const firstChip = fieldsWrap.querySelector(".option-chip");
+        if (firstChip) firstChip.focus();
+      } else if (selectEl) selectEl.focus();
       else {
         const first = fieldsWrap.querySelector("input");
         if (first) first.focus();
@@ -510,6 +577,57 @@
     let buffer = "";
     let listEl = panelEl.querySelector(".script-steps");
 
+    const setStatus = (text, failed) => {
+      let status = panelEl.querySelector(".script-status");
+      if (!status) {
+        status = document.createElement("div");
+        status.className = "script-status";
+        panelEl.prepend(status);
+      }
+      status.classList.toggle("failed", !!failed);
+      status.innerHTML = `<span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text"></span>`;
+      status.querySelector(".script-status-text").textContent = text;
+    };
+
+    const setStepState = (li, state) => {
+      if (!li) return;
+      li.classList.remove("active", "ok", "fail", "awaiting-input", "queued", "analyzing");
+      if (state) li.classList.add(state);
+      const el = li.querySelector(".step-state");
+      if (!el) return;
+      const labels = {
+        queued: "Queued",
+        active: "Running",
+        analyzing: "AI…",
+        ok: "Done",
+        fail: "Failed",
+        "awaiting-input": "Needs input",
+      };
+      el.textContent = labels[state] || "";
+    };
+
+    const setStepActivity = (li, message) => {
+      if (!li) return;
+      let row = li.querySelector(".step-activity");
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "step-activity";
+        row.innerHTML = `<span class="step-activity-spinner" aria-hidden="true"></span><span class="step-activity-text"></span>`;
+        const head = li.querySelector(".step-head");
+        if (head && head.nextSibling) li.insertBefore(row, head.nextSibling);
+        else li.appendChild(row);
+      }
+      const text = String(message || "").trim();
+      if (!text) {
+        row.hidden = true;
+        row.querySelector(".step-activity-text").textContent = "";
+        return;
+      }
+      row.hidden = false;
+      row.querySelector(".step-activity-text").textContent = text;
+      li.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+
     const ensureList = (planSteps) => {
       if (listEl && listEl.isConnected) return listEl;
       listEl = document.createElement("ol");
@@ -517,14 +635,65 @@
       (planSteps || []).forEach((step, i) => {
         const li = document.createElement("li");
         li.dataset.index = String(i);
-        const kind = step.type === "ui" ? " [UI]" : "";
-        li.innerHTML = `<code></code><pre class="step-out" hidden></pre>`;
-        li.querySelector("code").textContent =
-          (step.type === "ui" ? `Ask: ${step.ask || step.input_id}` : step.cmd || "") + kind;
+        li.className = "queued";
+        const isUi = step.type === "ui";
+        const label = isUi
+          ? step.ask || step.input_id || "Choose a value"
+          : step.cmd || "";
+        li.innerHTML = `
+          <div class="step-head">
+            <span class="step-badge">${i + 1}</span>
+            <div class="step-main">
+              <span class="step-kind">${isUi ? "Ask" : "Run"}</span>
+              <code class="step-cmd"></code>
+            </div>
+            <span class="step-state">Queued</span>
+          </div>
+          <div class="step-activity" hidden>
+            <span class="step-activity-spinner" aria-hidden="true"></span>
+            <span class="step-activity-text"></span>
+          </div>
+          <pre class="step-out" hidden></pre>
+          <div class="step-ask" hidden></div>`;
+        li.querySelector(".step-cmd").textContent = label;
         listEl.appendChild(li);
       });
-      panelEl.appendChild(listEl);
+      const status = panelEl.querySelector(".script-status");
+      panelEl.querySelectorAll(".inline-ask").forEach((el) => el.remove());
+      if (status && status.nextSibling) {
+        panelEl.insertBefore(listEl, status.nextSibling);
+      } else {
+        panelEl.appendChild(listEl);
+      }
       return listEl;
+    };
+
+    const askHostForStep = (index) => {
+      ensureList(steps);
+      let idx = Number.isFinite(Number(index)) ? Number(index) : 0;
+      let li = listEl.querySelector(`li[data-index="${idx}"]`);
+      if (!li) {
+        li =
+          listEl.querySelector("li.active") ||
+          listEl.querySelector("li:last-child");
+      }
+      if (!li) {
+        const host = document.createElement("div");
+        host.className = "inline-ask";
+        panelEl.appendChild(host);
+        return host;
+      }
+      setStepState(li, "awaiting-input");
+      setStepActivity(li, "");
+      let host = li.querySelector(".step-ask");
+      if (!host) {
+        host = document.createElement("div");
+        host.className = "step-ask";
+        li.appendChild(host);
+      }
+      host.hidden = false;
+      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return host;
     };
 
     while (true) {
@@ -544,10 +713,9 @@
             continue;
           }
           if (payload.type === "plan") {
-            const status = panelEl.querySelector(".script-status");
-            if (status) {
-              status.textContent = `Running lab script (${(payload.steps || []).length} steps) — will ask when needed…`;
-            }
+            setStatus(
+              `Running ${(payload.steps || []).length} steps — asks appear on the step that needs them`
+            );
             const old = panelEl.querySelector(".script-steps");
             if (old) old.remove();
             listEl = null;
@@ -556,15 +724,30 @@
             ensureList(steps);
             const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
             if (li) {
-              li.classList.add("active");
-              if (payload.cmd) li.querySelector("code").textContent = payload.cmd;
+              setStepState(li, "active");
+              const cmdEl = li.querySelector(".step-cmd");
+              if (cmdEl && payload.cmd) cmdEl.textContent = payload.cmd;
+              setStepActivity(li, payload.message || "Running command…");
+              setStatus(payload.message || `Running step ${payload.index + 1}…`);
+            }
+          } else if (payload.type === "step_progress") {
+            ensureList(steps);
+            const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
+            if (li) {
+              if (payload.clear || !payload.message) {
+                setStepActivity(li, "");
+              } else {
+                setStepState(li, "analyzing");
+                setStepActivity(li, payload.message);
+                setStatus(payload.message);
+              }
             }
           } else if (payload.type === "step_done") {
             ensureList(steps);
             const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
             if (!li) continue;
-            li.classList.remove("active");
-            li.classList.add(payload.ok ? "ok" : "fail");
+            setStepState(li, payload.ok ? "ok" : "fail");
+            setStepActivity(li, "");
             const pre = li.querySelector(".step-out");
             const bits = [];
             if (payload.stdout) bits.push(payload.stdout);
@@ -577,14 +760,10 @@
             pre.hidden = false;
             pre.textContent = bits.join("\n");
           } else if (payload.type === "need_input") {
-            const status = panelEl.querySelector(".script-status");
-            if (status) status.textContent = "Waiting for your choice…";
-            let askHost = panelEl.querySelector(".inline-ask");
-            if (!askHost) {
-              askHost = document.createElement("div");
-              askHost.className = "inline-ask";
-              panelEl.appendChild(askHost);
-            }
+            setStatus("Waiting for your choice on this step…");
+            const stepIndex =
+              payload.after_step != null ? payload.after_step : payload.index;
+            const askHost = askHostForStep(stepIndex);
             const answer = await promptInlineAsk(askHost, {
               id: payload.id,
               label: payload.label || payload.id,
@@ -594,17 +773,19 @@
               secret: !!payload.secret,
             });
             askHost.innerHTML = "";
+            askHost.hidden = true;
+            const awaiting = askHost.closest("li");
+            if (awaiting) setStepState(awaiting, "queued");
             if (!answer) {
-              if (status) status.textContent = "Stopped — input cancelled.";
+              setStatus("Stopped — input cancelled.", true);
               return;
             }
             if (payload.confirm_continue) {
-              const v = String(answer[payload.id] || Object[Object.keys(answer)[0]] || "").toLowerCase();
+              const v = String(answer[payload.id] || Object.values(answer)[0] || "").toLowerCase();
               if (v !== "yes" && v !== "y") {
-                if (status) status.textContent = "Stopped — you answered no.";
+                setStatus("Stopped — you answered no.", true);
                 return;
               }
-              // Proceed without storing confirm_* into template values
               const remaining = (payload.remaining || []).map((s, i) =>
                 i === 0 ? { ...s, ask: "" } : s
               );
@@ -613,7 +794,6 @@
             }
             Object.assign(known, payload.values || {}, answer);
             const remaining = payload.remaining || [];
-            // If this was a UI step, skip it after answering
             let nextSteps = remaining;
             if (remaining[0] && remaining[0].type === "ui") {
               nextSteps = remaining.slice(1);
@@ -621,7 +801,6 @@
             await streamScriptSteps(nextSteps, known, panelEl);
             return;
           } else if (payload.type === "need_confirm") {
-            // legacy
             const ok = confirm(`${payload.ask}\n\n${payload.cmd || ""}`);
             if (!ok) return;
             const remaining = (payload.remaining || []).map((s, i) =>
@@ -630,13 +809,11 @@
             await streamScriptSteps(remaining, known, panelEl);
             return;
           } else if (payload.type === "stopped") {
-            const status = panelEl.querySelector(".script-status");
-            if (status) status.textContent = `Stopped at step ${payload.index + 1} (command failed).`;
+            setStatus(`Stopped at step ${payload.index + 1} (command failed).`, true);
           } else if (payload.type === "finished") {
-            const status = panelEl.querySelector(".script-status");
-            if (status && !/Stopped|cancelled/i.test(status.textContent || "")) {
-              status.textContent = "Script finished.";
-            }
+            const cur = panelEl.querySelector(".script-status-text");
+            const t = cur ? cur.textContent || "" : "";
+            if (!/Stopped|cancelled/i.test(t)) setStatus("Script finished.");
           } else if (payload.type === "error") {
             throw new Error(payload.error || "script error");
           }
@@ -661,7 +838,7 @@
     btn.disabled = true;
     if (loader) loader.hidden = false;
     panelEl.hidden = false;
-    panelEl.innerHTML = `<div class="script-status">AI is building a discover → ask → act script…</div>`;
+    panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">AI is building the command plan…</span></div>`;
     try {
       const plan = await api("/api/run/plan", {
         method: "POST",
@@ -673,23 +850,11 @@
       });
       const steps = plan.steps || [];
       if (!steps.length) throw new Error("No steps in plan");
-      if (loader) {
-        loader.querySelector(".plan-loader-text").textContent = "Plan ready";
-        loader.querySelector(".plan-loader-spinner")?.remove();
-      }
-      if (
-        !confirm(
-          `Start lab script (${steps.length} steps)? HatsOff will run discovery commands and ask you mid-run when a choice is needed (interface, target, etc.).`
-        )
-      ) {
-        panelEl.innerHTML = `<div class="script-status">Cancelled.</div>`;
-        return;
-      }
       if (loader) loader.hidden = true;
-      panelEl.innerHTML = `<div class="script-status">Starting…</div>`;
+      panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">Starting ${steps.length} steps…</span></div>`;
       await streamScriptSteps(steps, {}, panelEl);
     } catch (err) {
-      panelEl.innerHTML = `<div class="script-status failed">Error: ${escapeHtml(err.message)}</div>`;
+      panelEl.innerHTML = `<div class="script-status failed"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">Error: ${escapeHtml(err.message)}</span></div>`;
     } finally {
       btn.disabled = false;
       if (loader) {

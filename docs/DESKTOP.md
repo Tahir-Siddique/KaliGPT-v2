@@ -96,9 +96,10 @@ On assistant messages with code:
 
 1. AI plans Kali bash steps (`type: run` / `type: ui`)
 2. Discovery commands run first
-3. Mid-run **dropdown** for choices (iface, hosts, yes/no…)
-4. Later steps fill `{{placeholders}}`
-5. Destructive steps can require an explicit confirm
+3. After useful output, AI can build dropdown options (Ethernet usually stays up if only Wi‑Fi goes monitor mode)
+4. Mid-run **asks** appear on the step that needs them
+5. Later steps fill `{{placeholders}}`
+6. Destructive steps can require an explicit confirm
 
 Non-shell choices use UI steps — they never hit the shell.
 
