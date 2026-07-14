@@ -627,7 +627,9 @@ textarea, input, .msg-content, .msg-content * {
 .msg-actions {
   margin-top: 0.55rem;
   display: flex;
+  align-items: center;
   gap: 0.5rem;
+  width: 100%;
 }
 
 .msg-run-all {
@@ -652,6 +654,34 @@ textarea, input, .msg-content, .msg-content * {
 .msg-run-all:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.plan-loader {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  min-height: 28px;
+}
+
+.plan-loader[hidden] {
+  display: none !important;
+}
+
+.plan-loader-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #2a4a3e;
+  border-top-color: #10a37f;
+  border-radius: 50%;
+  animation: plan-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes plan-spin {
+  to { transform: rotate(360deg); }
 }
 
 .script-panel {

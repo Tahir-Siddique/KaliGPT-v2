@@ -648,7 +648,18 @@
   async function runScriptFromMessage(sourceText, panelEl, btn) {
     const source = String(sourceText || "").trim();
     if (!source) return;
+    const actions = btn.closest(".msg-actions");
+    let loader = actions && actions.querySelector(".plan-loader");
+    if (actions && !loader) {
+      loader = document.createElement("div");
+      loader.className = "plan-loader";
+      loader.setAttribute("role", "status");
+      loader.setAttribute("aria-live", "polite");
+      loader.innerHTML = `<span class="plan-loader-spinner" aria-hidden="true"></span><span class="plan-loader-text">Building command plan…</span>`;
+      actions.appendChild(loader);
+    }
     btn.disabled = true;
+    if (loader) loader.hidden = false;
     panelEl.hidden = false;
     panelEl.innerHTML = `<div class="script-status">AI is building a discover → ask → act script…</div>`;
     try {
@@ -662,6 +673,10 @@
       });
       const steps = plan.steps || [];
       if (!steps.length) throw new Error("No steps in plan");
+      if (loader) {
+        loader.querySelector(".plan-loader-text").textContent = "Plan ready";
+        loader.querySelector(".plan-loader-spinner")?.remove();
+      }
       if (
         !confirm(
           `Start lab script (${steps.length} steps)? HatsOff will run discovery commands and ask you mid-run when a choice is needed (interface, target, etc.).`
@@ -670,12 +685,17 @@
         panelEl.innerHTML = `<div class="script-status">Cancelled.</div>`;
         return;
       }
+      if (loader) loader.hidden = true;
       panelEl.innerHTML = `<div class="script-status">Starting…</div>`;
       await streamScriptSteps(steps, {}, panelEl);
     } catch (err) {
       panelEl.innerHTML = `<div class="script-status failed">Error: ${escapeHtml(err.message)}</div>`;
     } finally {
       btn.disabled = false;
+      if (loader) {
+        loader.hidden = true;
+        loader.innerHTML = `<span class="plan-loader-spinner" aria-hidden="true"></span><span class="plan-loader-text">Building command plan…</span>`;
+      }
     }
   }
 
