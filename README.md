@@ -2,7 +2,7 @@
 
 **Kali Linux–oriented AI assistant for authorized penetration testing** — desktop chat + CLI.
 
-HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: multi-provider AI, local chat history, streaming replies, and Kali-compatible command/script runners with mid-run prompts.
+HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: multi-provider AI, local chat history, and Kali-compatible command/script runners with mid-run prompts.
 
 > **Credits / upstream.** HatsOff (this v2 desktop + agent work) was created following and building on **[SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT)** (HackerX) by [SudoHopeX](https://github.com/SudoHopeX) / Krishna Dwivedi. Full credit for the original Kali Linux CLI agentic assistant — please star and support that project.
 
@@ -24,7 +24,6 @@ HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: mu
 |------|----------------|
 | **Desktop UI** | ChatGPT-style local app, maximized window when pywebview works |
 | **Providers** | Gemini, ChatGPT, Ollama, OpenRouter, LiteLLM, Cursor |
-| **Streaming** | Token streaming with typewriter + caret |
 | **Labs** | Run code blocks; **Run script (AI ordered)** with discover → ask → act on Kali bash |
 | **Inputs** | Mid-run dropdowns for interfaces/targets; UI-only ask steps |
 | **Persistence** | Chats in `~/.kaligpt/chats.db`; keys in local `api.config.json` (not committed) |
@@ -179,7 +178,7 @@ python -m pytest tests/ -q
 
 ```
 agents/
-  desktop/           # HatsOff Flask UI + runner + SSE streaming
+  desktop/           # HatsOff Flask UI + runner
   cursor*.py         # Cursor SDK daemon / worker
   utils/             # config, prompts, tools
   *.py               # CLI providers (gemini, chatgpt, …)
@@ -212,6 +211,6 @@ Pentest for good. Unauthorized access to systems is prohibited. See [DISCLAIMER.
 | Project | Authors | Notes |
 |---------|---------|--------|
 | **[SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT)** (HackerX) | [SudoHopeX](https://github.com/SudoHopeX) / Krishna Dwivedi | Upstream Kali Linux CLI agentic AI this work is based on |
-| **HatsOff** | Tahir | Desktop UI, streaming chat, lab runners, and related v2 additions |
+| **HatsOff** | Tahir | Desktop UI, lab runners, and related v2 additions |
 
 Support the original project: [github.com/SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT)

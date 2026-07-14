@@ -6,7 +6,7 @@ HatsOff is the **desktop + lab runner** layer on top of the KaliGPT agent provid
 
 | Piece | Credit |
 |-------|--------|
-| HatsOff desktop (UI, streaming, Kali runner, branding) | Tahir |
+| HatsOff desktop (UI, Kali runner, branding) | Tahir |
 | KaliGPT / HackerX CLI agents, tools, installers | SudoHopeX (Krishna Dwivedi) and contributors |
 
 ## Stack
@@ -15,7 +15,7 @@ HatsOff is the **desktop + lab runner** layer on top of the KaliGPT agent provid
 - **API:** Flask in `agents/desktop/server.py`
 - **Chat DB:** SQLite via `agents/desktop/chat_store.py` → `~/.kaligpt/chats.db`
 - **Providers:** `agents/{gemini,chatgpt,ollama,openrouter,litellm_provider,cursor}.py`
-- **Desktop dispatch:** `agents/desktop/provider_router.py` (streaming, no tools on stream path)
+- **Desktop dispatch:** `agents/desktop/provider_router.py`
 - **Lab runner:** `agents/desktop/runner.py` (plan JSON, bash/-lc, mid-run `need_input`)
 - **Prompts:** `agents/utils/prompts.py` (`HATSOFF_AGENT`)
 - **Config:** `agents/utils/agent_configs.py` + local `api.config.json` (gitignored)
@@ -50,17 +50,16 @@ python -m pytest tests/ -q
 | `GET /` | UI |
 | `GET /api/providers` | Provider list + models |
 | `GET/POST /api/conversations…` | Chat CRUD |
-| `POST …/messages` | Non-stream send (tests / fallback) |
-| `POST …/messages/stream` | SSE chat streaming |
+| `POST …/messages` | Send chat message (full reply) |
 | `POST /api/run` | Single command |
 | `POST /api/run/plan` | AI ordered script (no execute) |
 | `POST /api/run/script/stream` | Execute with mid-run asks |
 | `GET /api/environment` | Kali/shell detection |
 | `GET/PUT /api/settings` | Config for Settings modal |
 
-### Streaming contract
+### Script runner SSE
 
-SSE events: `token`, `done`, `title`, `error` (chat); script events: `plan`, `step_start`, `step_done`, `need_input`, `finished`, `stopped`.
+Script runs use SSE events: `plan`, `step_start`, `step_done`, `need_input`, `finished`, `stopped`.
 
 ### Cursor daemon
 
@@ -70,13 +69,13 @@ SSE events: `token`, `done`, `title`, `error` (chat); script events: `plan`, `st
 
 - Prefer small, focused diffs.
 - Keep secrets out of the repo (`.gitignore` + example config).
-- Desktop streaming path skips tool loops (live tokens). Tool-using agents stay on CLI / non-stream send.
+- Chat replies use the full non-stream send path (`send_message`). Tool-using agents stay on CLI.
 - Runner commands must be Kali bash–friendly by default.
 - Add/adjust tests under `tests/` for store, API, and runner helpers.
 
 ## Tests worth knowing
 
-- `tests/test_desktop_chat.py` — store, SSE mock stream, settings, runner helpers
+- `tests/test_desktop_chat.py` — store, message API, settings, runner helpers
 - `tests/test_cursor_provider.py` — Cursor worker/daemon plumbing (mocked)
 
 ## Release checklist

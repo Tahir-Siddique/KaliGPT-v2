@@ -1,6 +1,6 @@
 # HatsOff desktop guide
 
-Local ChatGPT-style UI for Kali Linux labs: streaming chat, multi-provider AI, and a command/script runner that pauses for mid-run choices.
+Local ChatGPT-style UI for Kali Linux labs: multi-provider AI chat, and a command/script runner that pauses for mid-run choices.
 
 ## Requirements
 
@@ -78,10 +78,6 @@ No `.env` required for normal use. Optional Cursor override: `CURSOR_API_KEY`.
 
 ## Chat features
 
-### Streaming
-
-Replies stream over SSE (`/api/conversations/<id>/messages/stream`). The UI types with a caret, then renders markdown when finished.
-
 ### Titles
 
 After the first successful turn in a new chat, HatsOff asks the model for a short sidebar title once (`title_generated` lock).
@@ -149,7 +145,7 @@ Browser / pywebview
         ▼
 agents/desktop/server.py     Flask API + static UI
         │
-        ├─ provider_router   stream/send to Gemini, OpenAI, …, Cursor
+        ├─ provider_router   send to Gemini, OpenAI, …, Cursor
         ├─ chat_store        SQLite conversations
         └─ runner            plan + bash execution + mid-run asks
 ```

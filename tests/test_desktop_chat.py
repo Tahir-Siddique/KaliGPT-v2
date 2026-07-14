@@ -109,44 +109,6 @@ class TestDesktopAPI:
         assert loaded["metadata"].get("title_generated") is True
         assert title_mock.call_count == 1
 
-    def test_stream_message_sse(self, client, store):
-        create = client.post(
-            "/api/conversations",
-            data=json.dumps({"provider": "gemini", "model": "gemini-2.5-flash"}),
-            content_type="application/json",
-        )
-        conv_id = create.get_json()["id"]
-
-        def fake_stream(*_args, **_kwargs):
-            yield {"type": "token", "text": "Hello "}
-            yield {"type": "token", "text": "world"}
-            yield {"type": "done", "content": "Hello world", "cursor_agent_id": None}
-
-        with mock.patch(
-            "agents.desktop.server.provider_router.stream_message",
-            side_effect=fake_stream,
-        ), mock.patch(
-            "agents.desktop.server.provider_router.generate_chat_title",
-            return_value="Stream Chat",
-        ):
-            res = client.post(
-                f"/api/conversations/{conv_id}/messages/stream",
-                data=json.dumps({"content": "hi stream"}),
-                content_type="application/json",
-            )
-            # Stream body must be read while mocks are still active
-            assert res.status_code == 200
-            assert "text/event-stream" in (res.content_type or "")
-            raw = res.data.decode("utf-8")
-
-        assert "Hello " in raw
-        assert '"type": "done"' in raw or '"type":"done"' in raw
-        loaded = store.get_conversation(conv_id)
-        assert len(loaded["messages"]) == 2
-        assert loaded["messages"][0]["content"] == "hi stream"
-        assert loaded["messages"][1]["content"] == "Hello world"
-        assert loaded["title"] == "Stream Chat"
-
 
 def test_run_command_echo():
     import sys

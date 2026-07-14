@@ -803,6 +803,34 @@
     renderThread(null);
   }
 
+  function paintAssistantReply(row, finalText) {
+    const bodyEl = row.querySelector(".msg-content");
+    const actions = row.querySelector(".msg-actions");
+    const scriptPanel = row.querySelector(".script-panel");
+    row.classList.remove("pending");
+    bodyEl.classList.remove("streaming");
+    bodyEl.classList.add("md");
+    bodyEl.innerHTML = renderMarkdown(finalText || "");
+    enhanceCodeBlocks(bodyEl);
+    if (actions && scriptPanel) {
+      actions.hidden = true;
+      actions.innerHTML = "";
+      if (bodyEl.querySelector("pre")) {
+        actions.hidden = false;
+        const runAll = document.createElement("button");
+        runAll.type = "button";
+        runAll.className = "msg-run-all";
+        runAll.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg> Run script (AI ordered)`;
+        runAll.title = "Extract commands, order them with AI, then run in sequence";
+        runAll.addEventListener("click", () => {
+          runScriptFromMessage(finalText, scriptPanel, runAll);
+        });
+        actions.appendChild(runAll);
+      }
+    }
+    els.thread.scrollTop = els.thread.scrollHeight;
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     if (state.sending) return;
@@ -824,196 +852,36 @@
     els.thread.appendChild(pending);
     els.thread.scrollTop = els.thread.scrollHeight;
 
-    const bodyEl = pending.querySelector(".msg-content");
-
-    // ChatGPT-style reveal: network fills targetText; rAF types into displayedText
-    let targetText = "";
-    let displayedText = "";
-    let streamEnded = false;
-    let rafId = 0;
-    let lastScroll = 0;
-
-    function renderLive() {
-      bodyEl.classList.remove("md");
-      bodyEl.classList.add("streaming");
-      // Plain text + caret while typing (markdown after finalize feels smoother)
-      bodyEl.textContent = displayedText;
-      const caret = document.createElement("span");
-      caret.className = "stream-caret";
-      caret.setAttribute("aria-hidden", "true");
-      bodyEl.appendChild(caret);
-      const now = Date.now();
-      if (now - lastScroll > 32) {
-        lastScroll = now;
-        els.thread.scrollTop = els.thread.scrollHeight;
-      }
-    }
-
-    function tick() {
-      rafId = 0;
-      if (displayedText.length < targetText.length) {
-        // Catch up faster when far behind (big provider chunks), else ~1–3 chars
-        const lag = targetText.length - displayedText.length;
-        const step = lag > 80 ? Math.ceil(lag / 12) : lag > 24 ? 3 : 1;
-        displayedText = targetText.slice(0, displayedText.length + step);
-        pending.classList.remove("pending");
-        renderLive();
-      }
-      if (!streamEnded || displayedText.length < targetText.length) {
-        rafId = requestAnimationFrame(tick);
-      }
-    }
-
-    function ensureTypingLoop() {
-      if (!rafId) rafId = requestAnimationFrame(tick);
-    }
-
-    function finalizeMarkdown(finalText) {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = 0;
-      }
-      pending.classList.remove("pending");
-      bodyEl.classList.remove("streaming");
-      bodyEl.classList.add("md");
-      bodyEl.innerHTML = renderMarkdown(finalText || "");
-      enhanceCodeBlocks(bodyEl);
-      const actions = pending.querySelector(".msg-actions");
-      const scriptPanel = pending.querySelector(".script-panel");
-      if (actions && scriptPanel && bodyEl.querySelector("pre")) {
-        actions.hidden = false;
-        actions.innerHTML = "";
-        const runAll = document.createElement("button");
-        runAll.type = "button";
-        runAll.className = "msg-run-all";
-        runAll.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg> Run script (AI ordered)`;
-        runAll.title = "Extract commands, order them with AI, then run in sequence";
-        runAll.addEventListener("click", () => {
-          runScriptFromMessage(finalText, scriptPanel, runAll);
-        });
-        actions.appendChild(runAll);
-      }
-      els.thread.scrollTop = els.thread.scrollHeight;
-    }
-
     try {
-      const res = await fetch(`/api/conversations/${state.activeId}/messages/stream`, {
+      const data = await api(`/api/conversations/${state.activeId}/messages`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
         body: JSON.stringify({
           content: text,
           provider: currentProvider(),
           model: els.model.value,
         }),
-        cache: "no-store",
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || res.statusText || "Request failed");
-      }
-      if (!res.body) throw new Error("Streaming not supported in this browser");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
-
-        for (const part of parts) {
-          const lines = part.split("\n");
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line.startsWith("data:")) continue;
-            let payload;
-            try {
-              payload = JSON.parse(line.slice(5).trim());
-            } catch (_err) {
-              continue;
-            }
-            if (payload.type === "token") {
-              targetText += payload.text || "";
-              ensureTypingLoop();
-            } else if (payload.type === "error") {
-              streamEnded = true;
-              if (rafId) cancelAnimationFrame(rafId);
-              pending.classList.remove("pending");
-              bodyEl.classList.remove("streaming", "md");
-              bodyEl.textContent = `Error: ${payload.error || "stream failed"}`;
-            } else if (payload.type === "done") {
-              if (payload.assistant_message && payload.assistant_message.content) {
-                targetText = payload.assistant_message.content;
-              }
-              streamEnded = true;
-              ensureTypingLoop();
-              // Wait briefly for the typewriter to catch up, then markdown
-              const waitCatchUp = () =>
-                new Promise((resolve) => {
-                  const start = Date.now();
-                  const check = () => {
-                    if (
-                      displayedText.length >= targetText.length ||
-                      Date.now() - start > 4000
-                    ) {
-                      resolve();
-                      return;
-                    }
-                    requestAnimationFrame(check);
-                  };
-                  check();
-                });
-              await waitCatchUp();
-              finalizeMarkdown(targetText);
-              if (payload.conversation) {
-                const idx = state.conversations.findIndex(
-                  (c) => c.id === payload.conversation.id
-                );
-                if (idx >= 0) {
-                  state.conversations[idx] = {
-                    ...state.conversations[idx],
-                    title: payload.conversation.title,
-                    updated_at: payload.conversation.updated_at,
-                  };
-                  renderChatList();
-                }
-              }
-            } else if (payload.type === "title" && payload.conversation) {
-              const idx = state.conversations.findIndex(
-                (c) => c.id === payload.conversation.id
-              );
-              if (idx >= 0) {
-                state.conversations[idx] = {
-                  ...state.conversations[idx],
-                  title: payload.conversation.title,
-                };
-                renderChatList();
-              } else {
-                await loadConversations(els.search.value);
-              }
-            }
-          }
+      const reply =
+        (data.assistant_message && data.assistant_message.content) || "";
+      paintAssistantReply(pending, reply);
+      if (data.conversation) {
+        const idx = state.conversations.findIndex(
+          (c) => c.id === data.conversation.id
+        );
+        if (idx >= 0) {
+          state.conversations[idx] = {
+            ...state.conversations[idx],
+            title: data.conversation.title,
+            updated_at: data.conversation.updated_at,
+          };
+          renderChatList();
+        } else {
+          await loadConversations(els.search.value);
         }
       }
-
-      streamEnded = true;
-      ensureTypingLoop();
-      if (targetText && displayedText.length < targetText.length) {
-        displayedText = targetText;
-      }
-      if (targetText && !bodyEl.classList.contains("md")) {
-        finalizeMarkdown(targetText);
-      }
     } catch (err) {
-      streamEnded = true;
-      if (rafId) cancelAnimationFrame(rafId);
       pending.classList.remove("pending");
+      const bodyEl = pending.querySelector(".msg-content");
       bodyEl.classList.remove("streaming", "md");
       bodyEl.textContent = `Error: ${err.message}`;
     } finally {
