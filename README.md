@@ -7,7 +7,11 @@ HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: mu
 > **Authorized use only.** Use on labs, CTFs, and engagements you are allowed to test. See [DISCLAIMER.md](DISCLAIMER.md) and [LICENSE](LICENSE).
 
 <p align="center">
-  <img src="agents/desktop/static/hatsoff-mark.svg" alt="HatsOff" width="120" />
+  <img src="agents/desktop/static/hatsoff-mark.svg" alt="HatsOff" width="96" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/hatsoff-desktop.png" alt="HatsOff desktop on Kali Linux" width="820" />
 </p>
 
 ---
@@ -16,7 +20,7 @@ HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: mu
 
 | Area | What you get |
 |------|----------------|
-| **Desktop UI** | ChatGPT-style local app (`python -m agents.desktop`), maximized window when pywebview works |
+| **Desktop UI** | ChatGPT-style local app, maximized window when pywebview works |
 | **Providers** | Gemini, ChatGPT, Ollama, OpenRouter, LiteLLM, Cursor |
 | **Streaming** | Token streaming with typewriter + caret |
 | **Labs** | Run code blocks; **Run script (AI ordered)** with discover → ask → act on Kali bash |
@@ -28,15 +32,53 @@ HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: mu
 
 ## Quick start (Kali Linux)
 
+### One-shot install + run
+
+From the project root:
+
 ```bash
-cd ~/Desktop/KaliGPT   # or your clone path
+chmod +x ./install
+./install
+```
+
+This will:
+
+1. Install apt packages (Python, GTK/gi for the desktop window)
+2. Create `.venv` with `--system-site-packages`
+3. Install Python deps
+4. Create config from the example if missing
+5. Install a **`hatsoff`** command into `~/.local/bin`
+6. Add a Kali application menu entry
+7. Launch HatsOff
+
+Afterwards, start it like any other tool:
+
+```bash
+hatsoff
+hatsoff --browser
+hatsoff --no-window
+```
+
+Install without launching:
+
+```bash
+./install --no-run
+```
+
+If `hatsoff` is “command not found”, open a new terminal or:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Manual setup
+
+```bash
+cd ~/Desktop/KaliGPT
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install -r requirements/pip-requirements.txt
-
-# first-time config (gitignored)
 cp agents/utils/api.config.example.json agents/utils/api.config.json
-
 python -m agents.desktop
 ```
 

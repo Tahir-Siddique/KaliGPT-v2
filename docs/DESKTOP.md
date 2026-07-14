@@ -10,6 +10,19 @@ Local ChatGPT-style UI for Kali Linux labs: streaming chat, multi-provider AI, a
 
 ## Install
 
+### Recommended (`./install`)
+
+```bash
+chmod +x ./install
+./install            # install + launch
+./install --no-run   # install only
+hatsoff              # later launches
+```
+
+The installer creates `~/.local/bin/hatsoff` and a desktop menu entry.
+
+### Manual
+
 ```bash
 cd ~/Desktop/KaliGPT
 python3 -m venv --system-site-packages .venv
@@ -28,9 +41,20 @@ sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.
 
 ## Launch
 
+After `./install`:
+
 | Command | Behavior |
 |---------|----------|
-| `python -m agents.desktop` | Maximized native window when possible |
+| `hatsoff` | Maximized native window when possible |
+| `hatsoff --browser` | System browser |
+| `hatsoff --no-window` | Server only; open the printed URL |
+| `hatsoff --port 9000` | Custom port |
+
+Or from a activated venv:
+
+| Command | Behavior |
+|---------|----------|
+| `python -m agents.desktop` | Same as `hatsoff` |
 | `python -m agents.desktop --browser` | System browser |
 | `python -m agents.desktop --no-window` | Server only; open the printed URL |
 | `python -m agents.desktop --port 9000` | Custom port |
