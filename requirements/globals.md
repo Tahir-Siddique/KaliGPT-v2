@@ -30,7 +30,10 @@ This document lists all the requirements/dependencies for KaliGPT, categorized b
 | `requests`                                                                     | making HTTP requests                 |
 | `newspaper3k`,`lxml_html_clean`                                                | cleaning & parsing HTML              |
 | `beautifulsoup4`, `flask`, `ddgs`, `curl_cffi`, `nodriver`, `pyvirtualdisplay` | OpenSearchAPI dependency             |
-| `prompt_toolkit`                                                               | Interactive CLI Selector             | 
+| `prompt_toolkit`                                                               | Interactive CLI Selector             |
+| `litellm`                                                                      | LiteLLM gateway provider             |
+| `cursor-sdk`                                                                   | Cursor agent / HatsOff Cursor provider |
+| `flask`, `pywebview`                                                           | HatsOff desktop UI                   |
 
 
 ## System Packages
@@ -42,6 +45,7 @@ This document lists all the requirements/dependencies for KaliGPT, categorized b
 | `python3-pip`                                                            | Installing Python dependencies                                                | 
 | `git`                                                                    | Cloning GitHub repositories                                                   |
 | `bash`                                                                   | Installing KaliGPT, creating & using KaliGPT launcher                         |
+| `python3-gi`, `python3-gi-cairo`, `gir1.2-gtk-3.0`, `gir1.2-webkit2-4.1` | HatsOff native window (pywebview GTK); use venv `--system-site-packages`      |
 | `lixxml2`, `libxslt`                                                     | for building `lxml_html_clean`                                                |
 | `libjpeg-turbo`, `libpng`, `freetype`, `littlecms`,`openjpeg`, `libtiff` | for building `Pillow`                                                         | 
 | `make`, `pkg-config`, `clang`                                            | building packages like `Pillow`, `lxml`, `lxml_html_clean`, and `newspaper3k` |

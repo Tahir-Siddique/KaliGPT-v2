@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # HatsOff installer for Kali Linux / Debian-based systems
-# Usage:  ./install
+# Usage:
+#   ./install              # install + launch
+#   ./install --no-run     # install only
+#   ./install --update     # git pull + refresh deps (no launch)
 # After install:  hatsoff
 
 set -euo pipefail
@@ -15,15 +18,40 @@ DESKTOP_DIR="${HOME}/.local/share/applications"
 ICON_SRC="${ROOT}/agents/desktop/static/hatsoff-mark.svg"
 WRAPPER="${BIN_DIR}/hatsoff"
 
+NO_RUN=0
+DO_UPDATE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --no-run) NO_RUN=1 ;;
+    --update) DO_UPDATE=1; NO_RUN=1 ;;
+    -h|--help)
+      echo "Usage: ./install [--no-run] [--update]"
+      echo "  --no-run   install deps/launcher, do not start HatsOff"
+      echo "  --update   git pull + reinstall Python deps (implies --no-run)"
+      exit 0
+      ;;
+  esac
+done
+
 echo "========================================"
 echo "  HatsOff · Kali installer"
 echo "========================================"
 echo "Project: ${ROOT}"
 echo
 
+if [[ "${DO_UPDATE}" -eq 1 ]]; then
+  if [[ -d "${ROOT}/.git" ]] && command -v git >/dev/null; then
+    echo "[*] Updating from git…"
+    git pull --ff-only || git pull || true
+  else
+    echo "[!] Not a git checkout (or no git) — skipping pull"
+  fi
+fi
+
 # --- system packages (best-effort) ---
 need_apt=0
 command -v python3 >/dev/null || need_apt=1
+# Prefer system python3 for gi (apt packages live outside the venv)
 python3 -c "import gi" 2>/dev/null || need_apt=1
 
 if [[ "${need_apt}" -eq 1 ]]; then
@@ -39,21 +67,48 @@ if [[ "${need_apt}" -eq 1 ]]; then
     echo "[!] sudo not available — skip apt packages. Install python3-venv / gi yourself if needed."
   fi
 else
-  echo "[*] Python + gi look OK"
+  echo "[*] System Python + gi look OK"
 fi
 
-# --- venv ---
+# --- venv (must see system gi for pywebview GTK) ---
+recreate_venv=0
 if [[ ! -d "${VENV_DIR}" ]]; then
+  recreate_venv=1
+elif [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+  recreate_venv=1
+else
+  # Existing venvs created without --system-site-packages cannot import gi
+  if ! "${VENV_DIR}/bin/python" -c "import gi" 2>/dev/null; then
+    if python3 -c "import gi" 2>/dev/null; then
+      echo "[*] .venv cannot import gi — recreating with --system-site-packages"
+      recreate_venv=1
+    else
+      echo "[!] System gi still missing; desktop window may fall back to browser"
+    fi
+  fi
+fi
+
+if [[ "${recreate_venv}" -eq 1 ]]; then
   echo "[*] Creating venv with --system-site-packages (GTK/gi)…"
+  rm -rf "${VENV_DIR}"
   python3 -m venv --system-site-packages "${VENV_DIR}"
 else
-  echo "[*] Reusing existing .venv"
+  echo "[*] Reusing existing .venv (gi reachable)"
 fi
 
 # shellcheck disable=SC1091
 source "${VENV_DIR}/bin/activate"
 python -m pip install --upgrade pip
-python -m pip install -r "${ROOT}/requirements/pip-requirements.txt"
+# Always upgrade packages listed in requirements (needed after git pull / --update)
+python -m pip install -U -r "${ROOT}/requirements/pip-requirements.txt"
+
+if python -c "import gi" 2>/dev/null; then
+  echo "[*] Verified: venv can import gi (native window OK)"
+else
+  echo "[!] Warning: venv still cannot import gi — HatsOff will open in the browser"
+  echo "    Fix: sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1"
+  echo "         then re-run: ./install --no-run"
+fi
 
 # --- config ---
 CFG="${ROOT}/agents/utils/api.config.json"
@@ -82,9 +137,8 @@ echo "[*] Installed command: ${WRAPPER}"
 # --- optional desktop entry ---
 mkdir -p "${DESKTOP_DIR}"
 DESKTOP_FILE="${DESKTOP_DIR}/hatsoff.desktop"
-ICON_PATH="${ICON_SRC}"
 if [[ -f "${ICON_SRC}" ]]; then
-  ICON_LINE="Icon=${ICON_PATH}"
+  ICON_LINE="Icon=${ICON_SRC}"
 else
   ICON_LINE="Icon=utilities-terminal"
 fi
@@ -110,9 +164,8 @@ case ":${PATH}:" in
     echo "[!] Add to PATH (add to ~/.zshrc or ~/.bashrc):"
     echo "    export PATH=\"\${HOME}/.local/bin:\${PATH}\""
     echo
-    # try to append once if shell rc exists
     for rc in "${HOME}/.zshrc" "${HOME}/.bashrc"; do
-      if [[ -f "${rc}" ]] && ! grep -q 'HOME}/.local/bin' "${rc}" 2>/dev/null && ! grep -q '\.local/bin' "${rc}" 2>/dev/null; then
+      if [[ -f "${rc}" ]] && ! grep -q '\.local/bin' "${rc}" 2>/dev/null; then
         echo "" >> "${rc}"
         echo "# HatsOff" >> "${rc}"
         echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${rc}"
@@ -128,10 +181,12 @@ echo "========================================"
 echo "  Done. Start HatsOff with:"
 echo "    hatsoff"
 echo "    hatsoff --browser"
+echo "  Update later with:"
+echo "    ./install --update"
 echo "========================================"
 echo
-# run now unless --no-run
-if [[ "${1:-}" == "--no-run" ]]; then
+
+if [[ "${NO_RUN}" -eq 1 ]]; then
   exit 0
 fi
 

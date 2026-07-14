@@ -1,0 +1,2 @@
+# Convenience alias — same packages as requirements/pip-requirements.txt
+-r requirements/pip-requirements.txt

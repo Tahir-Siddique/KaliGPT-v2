@@ -4,6 +4,8 @@
 
 HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: multi-provider AI, local chat history, streaming replies, and Kali-compatible command/script runners with mid-run prompts.
 
+> **Credits / upstream.** HatsOff (this v2 desktop + agent work) was created following and building on **[SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT)** (HackerX) by [SudoHopeX](https://github.com/SudoHopeX) / Krishna Dwivedi. Full credit for the original Kali Linux CLI agentic assistant — please star and support that project.
+
 > **Authorized use only.** Use on labs, CTFs, and engagements you are allowed to test. See [DISCLAIMER.md](DISCLAIMER.md) and [LICENSE](LICENSE).
 
 <p align="center">
@@ -59,10 +61,19 @@ hatsoff --browser
 hatsoff --no-window
 ```
 
-Install without launching:
+Install without launching / refresh after `git pull`:
 
 ```bash
 ./install --no-run
+./install --update
+```
+
+If HatsOff opens in the browser with `No module named 'gi'`, your `.venv` can’t see system GTK. Re-run `./install --no-run` (it recreates the venv with `--system-site-packages`), or:
+
+```bash
+sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+rm -rf .venv && ./install --no-run
+hatsoff
 ```
 
 If `hatsoff` is “command not found”, open a new terminal or:
@@ -194,4 +205,13 @@ More: [docs/DESKTOP.md](docs/DESKTOP.md) · [DEVELOPER.md](DEVELOPER.md) · [CON
 
 Pentest for good. Unauthorized access to systems is prohibited. See [DISCLAIMER.md](DISCLAIMER.md).
 
-**HatsOff** desktop experience by **Tahir**. Built on the KaliGPT / HackerX agent lineage (CLI by SudoHopeX / Krishna Dwivedi).
+---
+
+## Credits
+
+| Project | Authors | Notes |
+|---------|---------|--------|
+| **[SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT)** (HackerX) | [SudoHopeX](https://github.com/SudoHopeX) / Krishna Dwivedi | Upstream Kali Linux CLI agentic AI this work is based on |
+| **HatsOff** | Tahir | Desktop UI, streaming chat, lab runners, and related v2 additions |
+
+Support the original project: [github.com/SudoHopeX/KaliGPT](https://github.com/SudoHopeX/KaliGPT)

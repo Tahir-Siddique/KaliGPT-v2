@@ -16,10 +16,12 @@ Local ChatGPT-style UI for Kali Linux labs: streaming chat, multi-provider AI, a
 chmod +x ./install
 ./install            # install + launch
 ./install --no-run   # install only
+./install --update   # git pull + refresh deps
 hatsoff              # later launches
 ```
 
-The installer creates `~/.local/bin/hatsoff` and a desktop menu entry.
+The installer creates `~/.local/bin/hatsoff` and a desktop menu entry.  
+If an old `.venv` was created **without** `--system-site-packages`, `./install` recreates it so GTK/`gi` works for the native window.
 
 ### Manual
 
