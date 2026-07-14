@@ -20,6 +20,77 @@ from . import session_cleanup
 
 _MAX_OUTPUT = 32_000
 _DEFAULT_TIMEOUT = 120
+_LOG_SNIP = 1200
+
+
+def _log(msg: str) -> None:
+    """Always print to the HatsOff process console (stderr)."""
+    print(f"[HatsOff] {msg}", file=sys.stderr, flush=True)
+
+
+def _snip(text: str, limit: int = _LOG_SNIP) -> str:
+    t = (text or "").strip()
+    if len(t) <= limit:
+        return t
+    return t[:limit] + f"\n… [{len(t) - limit} more chars]"
+
+
+def _log_command_result(result: Dict[str, Any]) -> None:
+    cmd = result.get("command") or ""
+    ok = bool(result.get("ok"))
+    code = result.get("exit_code")
+    timed_out = bool(result.get("timed_out"))
+    applied = result.get("applied_timeout")
+    status = "OK" if ok else "FAIL"
+    if timed_out:
+        status = "TIMEOUT-OK" if ok else "TIMEOUT"
+    _log(f"── {status}  exit={code}  limit={applied}s")
+    _log(f"$ {cmd}")
+    out = (result.get("stdout") or "").strip()
+    err = (result.get("stderr") or "").strip()
+    if out:
+        _log(f"stdout:\n{_snip(out)}")
+    if err:
+        _log(f"stderr:\n{_snip(err)}")
+    if not out and not err and not ok:
+        _log("(no stdout/stderr captured)")
+    _log("──")
+
+_TIMEOUT_CMD_RE = re.compile(
+    r"(?i)\btimeout(?:\s+-(?:s\s+\w+|k\s+\d+|[a-zA-Z]))*\s+(\d+)\s+"
+)
+_SURVEY_TOOL_RE = re.compile(
+    r"(?i)\b(airodump-ng|tcpdump|tshark|dumpcap|bettercap|kismet)\b"
+)
+
+
+def effective_timeout(command: str, fallback: int = _DEFAULT_TIMEOUT) -> int:
+    """
+    Prefer the GNU `timeout N` inside the command (+ grace) so HatsOff doesn't
+    sit another full minute after the survey was supposed to stop.
+    """
+    cmd = command or ""
+    m = _TIMEOUT_CMD_RE.search(cmd)
+    if m:
+        return max(10, int(m.group(1)) + 20)
+    if _SURVEY_TOOL_RE.search(cmd):
+        # Captures run forever unless wrapped — keep bounded
+        return max(60, min(int(fallback or _DEFAULT_TIMEOUT), 90))
+    return max(5, int(fallback or _DEFAULT_TIMEOUT))
+
+
+def command_succeeded(command: str, *, exit_code: Optional[int], timed_out: bool) -> bool:
+    """Survey tools stopped by GNU timeout (124) are a success for HatsOff."""
+    if timed_out and _SURVEY_TOOL_RE.search(command or ""):
+        # Outer HatsOff timeout on airodump — still usable output maybe
+        return True
+    if exit_code == 0:
+        return True
+    # GNU coreutils timeout → 124 when the limit is hit (expected for airodump)
+    if exit_code == 124 and _TIMEOUT_CMD_RE.search(command or ""):
+        return True
+    return False
+
 
 # Commands that take down Ethernet / all NM interfaces — blocked in HatsOff scripts
 _BLOCKED_NET_KILL = re.compile(
@@ -180,6 +251,10 @@ def run_command(
     workdir = cwd or os.getcwd()
     exe, prefix = resolve_shell()
     env_info = detect_environment()
+    use_timeout = effective_timeout(cmd, timeout)
+    shell = env_info.get("shell_label") or "shell"
+    _log(f"RUN  [{shell}]  timeout≈{use_timeout}s")
+    _log(f"$ {cmd}")
     try:
         if prefix:
             completed = subprocess.run(
@@ -187,7 +262,7 @@ def run_command(
                 cwd=workdir if env_info["mode"] != "kali-wsl" else None,
                 capture_output=True,
                 text=True,
-                timeout=max(5, int(timeout or _DEFAULT_TIMEOUT)),
+                timeout=use_timeout,
             )
         else:
             completed = subprocess.run(
@@ -196,35 +271,57 @@ def run_command(
                 cwd=workdir,
                 capture_output=True,
                 text=True,
-                timeout=max(5, int(timeout or _DEFAULT_TIMEOUT)),
+                timeout=use_timeout,
             )
         stdout = (completed.stdout or "")[-_MAX_OUTPUT:]
         stderr = (completed.stderr or "")[-_MAX_OUTPUT:]
-        return {
-            "ok": completed.returncode == 0,
+        code = completed.returncode
+        ok = command_succeeded(cmd, exit_code=code, timed_out=False)
+        if code == 124 and _TIMEOUT_CMD_RE.search(cmd):
+            note = "Stopped after planned timeout (exit 124) — treating as success for survey capture."
+            if stderr:
+                stderr = f"{stderr.rstrip()}\n{note}"
+            else:
+                stderr = note
+        result = {
+            "ok": ok,
             "command": cmd,
-            "exit_code": completed.returncode,
+            "exit_code": code,
             "stdout": stdout,
             "stderr": stderr,
             "timed_out": False,
             "cwd": workdir,
             "shell": env_info.get("shell_label"),
+            "applied_timeout": use_timeout,
         }
+        _log_command_result(result)
+        return result
     except subprocess.TimeoutExpired as exc:
         out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
         err = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
-        return {
-            "ok": False,
+        err = (str(err) or f"Timed out after {use_timeout}s")[-_MAX_OUTPUT:]
+        ok = command_succeeded(cmd, exit_code=None, timed_out=True)
+        if ok:
+            err = (
+                f"{err.rstrip()}\n"
+                f"[survey] Outer timeout after {use_timeout}s — stopping capture; "
+                "checking any files written under /tmp."
+            )[-_MAX_OUTPUT:]
+        result = {
+            "ok": ok,
             "command": cmd,
             "exit_code": None,
             "stdout": str(out)[-_MAX_OUTPUT:],
-            "stderr": (str(err) or f"Timed out after {timeout}s")[-_MAX_OUTPUT:],
+            "stderr": err,
             "timed_out": True,
             "cwd": workdir,
             "shell": env_info.get("shell_label"),
+            "applied_timeout": use_timeout,
         }
+        _log_command_result(result)
+        return result
     except Exception as exc:
-        return {
+        result = {
             "ok": False,
             "command": cmd,
             "exit_code": None,
@@ -234,6 +331,9 @@ def run_command(
             "cwd": workdir,
             "shell": env_info.get("shell_label"),
         }
+        _log(f"EXCEPTION while running command: {exc}")
+        _log_command_result(result)
+        return result
 
 
 def _ask_model_text(
@@ -567,7 +667,9 @@ def plan_script_from_text(
         'sudo ip link set {{iface}} up","note":"monitor mode on WIFI only — do not touch eth",'
         '"cleanup":"sudo ip link set {{iface}} down; sudo iw dev {{iface}} set type managed; '
         'sudo ip link set {{iface}} up; sudo nmcli device set {{iface}} managed yes"},\n'
-        '    {"type":"run","cmd":"sudo airodump-ng {{iface}}","note":"capture"}\n'
+        '    {"type":"run","cmd":"sudo timeout -s INT -k 5 30 airodump-ng -w /tmp/hatsoff_survey '
+        '--output-format csv {{iface}}","note":"wifi survey — intentional stop after 30s",'
+        '"cleanup":""}\n'
         "  ]\n"
         "}\n\n"
         "Rules:\n"
@@ -582,6 +684,10 @@ def plan_script_from_text(
         "the user insists (it often kills networking).\n"
         "- Never choose eth*/enp*/wired for monitor mode. Options should be wlan*/wlp*/wl* only "
         "for Wi‑Fi tasks.\n"
+        "- Long-running captures (`airodump-ng`, `tcpdump`, …) MUST be wrapped as:\n"
+        "  `sudo timeout -s INT -k 5 30 <cmd>` (30–45s is enough for a lab survey).\n"
+        "  Exit code 124 from timeout is expected success — do not add a follow-up that "
+        "assumes airodump runs forever.\n"
         "- When a step changes host state, set `cleanup` to reverse ONLY that wifi iface "
         "(managed yes + type managed). Do not restart/stop NM as part of monitor setup.\n"
         "- For values that cannot be shell commands (choose iface, pick host, password), "
@@ -759,6 +865,7 @@ def run_script_stream(
         }
         blocked = command_kills_ethernet(cmd)
         if blocked:
+            _log(f"BLOCKED step {idx + 1}: {blocked}")
             result = {
                 "ok": False,
                 "command": cmd,
@@ -771,6 +878,7 @@ def run_script_stream(
             yield {"type": "step_done", "index": idx, **result}
             yield {"type": "stopped", "index": idx, "reason": "blocked_ethernet_kill"}
             break
+        _log(f"step {idx + 1}/{len(steps)} starting…")
         result = run_command(cmd, cwd=cwd, timeout=timeout)
         yield {"type": "step_done", "index": idx, **result}
         if result.get("ok"):
@@ -804,6 +912,7 @@ def run_script_stream(
                     "index": idx,
                     "message": "AI is reading output for the next choice…",
                 }
+                _log(f"AI analyze after step {idx + 1} (keepalive while waiting)…")
                 # Run AI off-thread and keepalive the SSE so webview doesn't drop
                 out_q: "queue.Queue[Tuple[str, Any]]" = queue.Queue()
 
@@ -843,6 +952,7 @@ def run_script_stream(
                         yield {"type": "keepalive"}
                 kind, payload = out_q.get()
                 if kind == "err":
+                    _log(f"AI analyze error: {payload}")
                     yield {
                         "type": "step_progress",
                         "index": idx,
@@ -852,22 +962,28 @@ def run_script_stream(
                     suggestion = None
                 else:
                     suggestion = payload
-                if suggestion:
-                    yield {
-                        "type": "need_input",
-                        "index": idx,
-                        "after_step": idx,
-                        "id": suggestion["id"],
-                        "label": suggestion["label"],
-                        "reason": suggestion.get("reason") or "",
-                        "options": suggestion.get("options") or [],
-                        "secret": bool(suggestion.get("secret")),
-                        "allow_custom": bool(suggestion.get("allow_custom", True)),
-                        "cmd": cmd,
-                        "remaining": steps[idx + 1 :],
-                        "values": known,
-                    }
-                    return
+                    if suggestion:
+                        _log(
+                            f"AI ask → id={suggestion.get('id')} "
+                            f"options={len(suggestion.get('options') or [])} "
+                            f"label={suggestion.get('label')}"
+                        )
+                        yield {
+                            "type": "need_input",
+                            "index": idx,
+                            "after_step": idx,
+                            "id": suggestion["id"],
+                            "label": suggestion["label"],
+                            "reason": suggestion.get("reason") or "",
+                            "options": suggestion.get("options") or [],
+                            "secret": bool(suggestion.get("secret")),
+                            "allow_custom": bool(suggestion.get("allow_custom", True)),
+                            "cmd": cmd,
+                            "remaining": steps[idx + 1 :],
+                            "values": known,
+                        }
+                        return
+                    _log("AI analyze → no input needed")
                 yield {
                     "type": "step_progress",
                     "index": idx,
