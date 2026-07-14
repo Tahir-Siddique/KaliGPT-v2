@@ -423,7 +423,11 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
                     model=model,
                     analyze_output=bool(body.get("analyze_output", True)),
                 ):
-                    yield _sse(event)
+                    if event.get("type") == "keepalive":
+                        # SSE comment keeps proxies / pywebview from idling out
+                        yield ": keepalive\n\n"
+                    else:
+                        yield _sse(event)
             except Exception as exc:
                 yield _sse({"type": "error", "error": str(exc)})
 

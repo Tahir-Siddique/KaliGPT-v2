@@ -548,7 +548,35 @@
     });
   }
 
-  async function streamScriptSteps(steps, values, panelEl) {
+  function isTransientStreamError(err) {
+    const m = String((err && err.message) || err || "");
+    return /input stream|network error|failed to fetch|load failed|connection reset|body stream|networkerror|premature/i.test(
+      m
+    );
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function streamScriptSteps(steps, values, panelEl, attempt = 0) {
+    try {
+      await streamScriptStepsOnce(steps, values, panelEl);
+    } catch (err) {
+      if (attempt < 3 && isTransientStreamError(err)) {
+        const status = panelEl.querySelector(".script-status");
+        if (status) {
+          status.classList.remove("failed");
+          status.innerHTML = `<span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">Connection dropped — retrying (${attempt + 1}/3)…</span>`;
+        }
+        await sleep(700 * (attempt + 1));
+        return streamScriptSteps(steps, values, panelEl, attempt + 1);
+      }
+      throw err;
+    }
+  }
+
+  async function streamScriptStepsOnce(steps, values, panelEl) {
     const known = { ...(values || {}) };
     const res = await fetch("/api/run/script/stream", {
       method: "POST",
@@ -696,138 +724,152 @@
       return host;
     };
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
-      for (const part of parts) {
-        for (const rawLine of part.split("\n")) {
-          const line = rawLine.trim();
-          if (!line.startsWith("data:")) continue;
-          let payload;
-          try {
-            payload = JSON.parse(line.slice(5).trim());
-          } catch (_e) {
-            continue;
-          }
-          if (payload.type === "plan") {
-            setStatus(
-              `Running ${(payload.steps || []).length} steps — asks appear on the step that needs them`
-            );
-            const old = panelEl.querySelector(".script-steps");
-            if (old) old.remove();
-            listEl = null;
-            ensureList(payload.steps || steps);
-          } else if (payload.type === "step_start") {
-            ensureList(steps);
-            const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
-            if (li) {
-              setStepState(li, "active");
-              const cmdEl = li.querySelector(".step-cmd");
-              if (cmdEl && payload.cmd) cmdEl.textContent = payload.cmd;
-              setStepActivity(li, payload.message || "Running command…");
-              setStatus(payload.message || `Running step ${payload.index + 1}…`);
+    let streamTerminal = false;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+        for (const part of parts) {
+          for (const rawLine of part.split("\n")) {
+            const line = rawLine.trim();
+            if (!line.startsWith("data:")) continue;
+            let payload;
+            try {
+              payload = JSON.parse(line.slice(5).trim());
+            } catch (_e) {
+              continue;
             }
-          } else if (payload.type === "step_progress") {
-            ensureList(steps);
-            const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
-            if (li) {
-              if (payload.clear || !payload.message) {
-                setStepActivity(li, "");
-              } else {
-                setStepState(li, "analyzing");
-                setStepActivity(li, payload.message);
-                setStatus(payload.message);
+            if (payload.type === "plan") {
+              setStatus(
+                `Running ${(payload.steps || []).length} steps — asks appear on the step that needs them`
+              );
+              const old = panelEl.querySelector(".script-steps");
+              if (old) old.remove();
+              listEl = null;
+              ensureList(payload.steps || steps);
+            } else if (payload.type === "step_start") {
+              ensureList(steps);
+              const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
+              if (li) {
+                setStepState(li, "active");
+                const cmdEl = li.querySelector(".step-cmd");
+                if (cmdEl && payload.cmd) cmdEl.textContent = payload.cmd;
+                setStepActivity(li, payload.message || "Running command…");
+                setStatus(payload.message || `Running step ${payload.index + 1}…`);
               }
-            }
-          } else if (payload.type === "step_done") {
-            ensureList(steps);
-            const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
-            if (!li) continue;
-            setStepState(li, payload.ok ? "ok" : "fail");
-            setStepActivity(li, "");
-            const pre = li.querySelector(".step-out");
-            const bits = [];
-            if (payload.stdout) bits.push(payload.stdout);
-            if (payload.stderr) bits.push(payload.stderr);
-            bits.push(
-              payload.timed_out
-                ? "[timed out]"
-                : `[exit ${payload.exit_code == null ? "?" : payload.exit_code}]`
-            );
-            pre.hidden = false;
-            pre.textContent = bits.join("\n");
-          } else if (payload.type === "cleanup_registered") {
-            setStatus(`Will auto-revert later: ${payload.description || "lab change"}`);
-          } else if (payload.type === "need_input") {
-            setStatus("Waiting for your choice on this step…");
-            const stepIndex =
-              payload.after_step != null ? payload.after_step : payload.index;
-            const askHost = askHostForStep(stepIndex);
-            const answer = await promptInlineAsk(askHost, {
-              id: payload.id,
-              label: payload.label || payload.id,
-              reason: payload.reason || "",
-              options: payload.options || [],
-              allow_custom: payload.allow_custom !== false,
-              secret: !!payload.secret,
-            });
-            askHost.innerHTML = "";
-            askHost.hidden = true;
-            const awaiting = askHost.closest("li");
-            if (awaiting) setStepState(awaiting, "queued");
-            if (!answer) {
-              setStatus("Stopped — input cancelled.", true);
-              return;
-            }
-            if (payload.confirm_continue) {
-              const v = String(answer[payload.id] || Object.values(answer)[0] || "").toLowerCase();
-              if (v !== "yes" && v !== "y") {
-                setStatus("Stopped — you answered no.", true);
+            } else if (payload.type === "step_progress") {
+              ensureList(steps);
+              const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
+              if (li) {
+                if (payload.clear || !payload.message) {
+                  setStepActivity(li, "");
+                } else {
+                  setStepState(li, "analyzing");
+                  setStepActivity(li, payload.message);
+                  setStatus(payload.message);
+                }
+              }
+            } else if (payload.type === "step_done") {
+              ensureList(steps);
+              const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
+              if (!li) continue;
+              setStepState(li, payload.ok ? "ok" : "fail");
+              setStepActivity(li, "");
+              const pre = li.querySelector(".step-out");
+              const bits = [];
+              if (payload.stdout) bits.push(payload.stdout);
+              if (payload.stderr) bits.push(payload.stderr);
+              bits.push(
+                payload.timed_out
+                  ? "[timed out]"
+                  : `[exit ${payload.exit_code == null ? "?" : payload.exit_code}]`
+              );
+              pre.hidden = false;
+              pre.textContent = bits.join("\n");
+            } else if (payload.type === "cleanup_registered") {
+              setStatus(`Will auto-revert later: ${payload.description || "lab change"}`);
+            } else if (payload.type === "need_input") {
+              streamTerminal = true;
+              setStatus("Waiting for your choice on this step…");
+              const stepIndex =
+                payload.after_step != null ? payload.after_step : payload.index;
+              const askHost = askHostForStep(stepIndex);
+              const answer = await promptInlineAsk(askHost, {
+                id: payload.id,
+                label: payload.label || payload.id,
+                reason: payload.reason || "",
+                options: payload.options || [],
+                allow_custom: payload.allow_custom !== false,
+                secret: !!payload.secret,
+              });
+              askHost.innerHTML = "";
+              askHost.hidden = true;
+              const awaiting = askHost.closest("li");
+              if (awaiting) setStepState(awaiting, "queued");
+              if (!answer) {
+                setStatus("Stopped — input cancelled.", true);
                 return;
               }
+              if (payload.confirm_continue) {
+                const v = String(answer[payload.id] || Object.values(answer)[0] || "").toLowerCase();
+                if (v !== "yes" && v !== "y") {
+                  setStatus("Stopped — you answered no.", true);
+                  return;
+                }
+                const remaining = (payload.remaining || []).map((s, i) =>
+                  i === 0 ? { ...s, ask: "" } : s
+                );
+                await streamScriptSteps(remaining, { ...known, ...(payload.values || {}) }, panelEl);
+                return;
+              }
+              Object.assign(known, payload.values || {}, answer);
+              const remaining = payload.remaining || [];
+              let nextSteps = remaining;
+              if (remaining[0] && remaining[0].type === "ui") {
+                nextSteps = remaining.slice(1);
+              }
+              await streamScriptSteps(nextSteps, known, panelEl);
+              return;
+            } else if (payload.type === "need_confirm") {
+              streamTerminal = true;
+              const ok = confirm(`${payload.ask}\n\n${payload.cmd || ""}`);
+              if (!ok) return;
               const remaining = (payload.remaining || []).map((s, i) =>
                 i === 0 ? { ...s, ask: "" } : s
               );
-              await streamScriptSteps(remaining, { ...known, ...(payload.values || {}) }, panelEl);
+              await streamScriptSteps(remaining, known, panelEl);
               return;
+            } else if (payload.type === "stopped") {
+              streamTerminal = true;
+              setStatus(`Stopped at step ${payload.index + 1} (command failed).`, true);
+            } else if (payload.type === "finished") {
+              streamTerminal = true;
+              const cur = panelEl.querySelector(".script-status-text");
+              const t = cur ? cur.textContent || "" : "";
+              if (!/Stopped|cancelled/i.test(t)) {
+                const cleaned = (payload.cleanup_results || []).length;
+                setStatus(
+                  cleaned
+                    ? `Script finished — reverted ${cleaned} lab change(s).`
+                    : "Script finished."
+                );
+              }
+            } else if (payload.type === "error") {
+              streamTerminal = true;
+              throw new Error(payload.error || "script error");
             }
-            Object.assign(known, payload.values || {}, answer);
-            const remaining = payload.remaining || [];
-            let nextSteps = remaining;
-            if (remaining[0] && remaining[0].type === "ui") {
-              nextSteps = remaining.slice(1);
-            }
-            await streamScriptSteps(nextSteps, known, panelEl);
-            return;
-          } else if (payload.type === "need_confirm") {
-            const ok = confirm(`${payload.ask}\n\n${payload.cmd || ""}`);
-            if (!ok) return;
-            const remaining = (payload.remaining || []).map((s, i) =>
-              i === 0 ? { ...s, ask: "" } : s
-            );
-            await streamScriptSteps(remaining, known, panelEl);
-            return;
-          } else if (payload.type === "stopped") {
-            setStatus(`Stopped at step ${payload.index + 1} (command failed).`, true);
-          } else if (payload.type === "finished") {
-            const cur = panelEl.querySelector(".script-status-text");
-            const t = cur ? cur.textContent || "" : "";
-            if (!/Stopped|cancelled/i.test(t)) {
-              const cleaned = (payload.cleanup_results || []).length;
-              setStatus(
-                cleaned
-                  ? `Script finished — reverted ${cleaned} lab change(s).`
-                  : "Script finished."
-              );
-            }
-          } else if (payload.type === "error") {
-            throw new Error(payload.error || "script error");
           }
         }
       }
+    } catch (err) {
+      if (isTransientStreamError(err)) throw err;
+      throw err;
+    }
+    if (!streamTerminal) {
+      throw new TypeError("Error in input stream");
     }
   }
 
@@ -849,14 +891,34 @@
     panelEl.hidden = false;
     panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">AI is building the command plan…</span></div>`;
     try {
-      const plan = await api("/api/run/plan", {
-        method: "POST",
-        body: JSON.stringify({
-          source,
-          provider: currentProvider(),
-          model: els.model.value,
-        }),
-      });
+      let plan = null;
+      let lastErr = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          plan = await api("/api/run/plan", {
+            method: "POST",
+            body: JSON.stringify({
+              source,
+              provider: currentProvider(),
+              model: els.model.value,
+            }),
+          });
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 2 && isTransientStreamError(err)) {
+            if (loader) {
+              const t = loader.querySelector(".plan-loader-text");
+              if (t) t.textContent = `Retrying plan (${attempt + 1}/3)…`;
+            }
+            await sleep(700 * (attempt + 1));
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (!plan) throw lastErr || new Error("Plan failed");
       const steps = plan.steps || [];
       if (!steps.length) throw new Error("No steps in plan");
       if (loader) loader.hidden = true;

@@ -6,10 +6,12 @@ from __future__ import annotations
 import json
 import os
 import platform
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
@@ -802,15 +804,54 @@ def run_script_stream(
                     "index": idx,
                     "message": "AI is reading output for the next choice…",
                 }
-                suggestion = suggest_input_after_output(
-                    provider,
-                    last_cmd=cmd,
-                    last_output=combined,
-                    remaining_steps=steps[idx + 1 :],
-                    values=known,
-                    model=model,
-                    cwd=cwd,
-                )
+                # Run AI off-thread and keepalive the SSE so webview doesn't drop
+                out_q: "queue.Queue[Tuple[str, Any]]" = queue.Queue()
+
+                def _analyze():
+                    try:
+                        out_q.put(
+                            (
+                                "ok",
+                                suggest_input_after_output(
+                                    provider,
+                                    last_cmd=cmd,
+                                    last_output=combined,
+                                    remaining_steps=steps[idx + 1 :],
+                                    values=known,
+                                    model=model,
+                                    cwd=cwd,
+                                ),
+                            )
+                        )
+                    except Exception as exc:
+                        out_q.put(("err", exc))
+
+                worker = threading.Thread(target=_analyze, daemon=True)
+                worker.start()
+                tick = 0
+                while worker.is_alive():
+                    worker.join(timeout=1.5)
+                    if worker.is_alive():
+                        tick += 1
+                        yield {
+                            "type": "step_progress",
+                            "index": idx,
+                            "message": "AI is reading output for the next choice…",
+                            "heartbeat": True,
+                            "tick": tick,
+                        }
+                        yield {"type": "keepalive"}
+                kind, payload = out_q.get()
+                if kind == "err":
+                    yield {
+                        "type": "step_progress",
+                        "index": idx,
+                        "message": f"AI analyze skipped: {payload}",
+                        "clear": False,
+                    }
+                    suggestion = None
+                else:
+                    suggestion = payload
                 if suggestion:
                     yield {
                         "type": "need_input",
