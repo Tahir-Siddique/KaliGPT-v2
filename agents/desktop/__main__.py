@@ -12,6 +12,7 @@ import webbrowser
 
 from .chat_store import ChatStore
 from .server import create_app
+from . import session_cleanup
 
 
 def _free_port(preferred: int = 8765) -> int:
@@ -39,6 +40,7 @@ def main(argv=None):
     store = ChatStore()
     app = create_app(store=store)
     url = f"http://{args.host}:{port}/"
+    session_cleanup.install_exit_hooks()
 
     def run():
         # HTTP/1.1 keeps chunked streaming happier than HTTP/1.0 with some clients
@@ -67,6 +69,7 @@ def main(argv=None):
                 time.sleep(0.5)
         except KeyboardInterrupt:
             print("\nExiting.")
+            session_cleanup.run_pending(reason="keyboard_interrupt")
         return 0
 
     if not args.browser:
@@ -90,6 +93,7 @@ def main(argv=None):
                     pass
 
             webview.start(_ensure_maximized)
+            session_cleanup.run_pending(reason="window_closed")
             return 0
         except Exception as exc:
             print(f"[!] pywebview unavailable ({exc}); opening system browser.")
@@ -114,6 +118,7 @@ def main(argv=None):
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nExiting.")
+        session_cleanup.run_pending(reason="keyboard_interrupt")
     return 0
 
 

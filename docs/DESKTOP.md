@@ -103,6 +103,29 @@ On assistant messages with code:
 
 Non-shell choices use UI steps — they never hit the shell.
 
+### Auto-revert (monitor mode & friends)
+
+HatsOff tracks lab mutations it can safely undo (monitor mode via `airmon-ng` / `iw` / `iwconfig`, NetworkManager stop, etc.). Those reverts run:
+
+- when a script **finishes**, and
+- when you **close** HatsOff / Ctrl+C — even mid-run
+
+Manual restore right now (if already stuck in monitor mode):
+
+```bash
+# airmon-ng style (wlan0 → wlan0mon)
+sudo airmon-ng stop wlan0mon
+sudo systemctl start NetworkManager
+
+# or iw / managed mode on the same iface name
+sudo ip link set wlan0 down
+sudo iw dev wlan0 set type managed
+sudo ip link set wlan0 up
+sudo systemctl start NetworkManager
+```
+
+API: `GET/POST /api/cleanup`
+
 ## Environment API
 
 ```http

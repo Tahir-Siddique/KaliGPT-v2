@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from . import provider_router
+from . import session_cleanup
 
 _MAX_OUTPUT = 32_000
 _DEFAULT_TIMEOUT = 120
@@ -285,7 +286,7 @@ def _normalize_step(item: Any) -> Optional[Dict[str, Any]]:
         cmd = item.strip()
         if not cmd:
             return None
-        return {"type": "run", "cmd": cmd, "note": "", "ask": "", "input_id": ""}
+        return {"type": "run", "cmd": cmd, "note": "", "ask": "", "input_id": "", "cleanup": ""}
     if not isinstance(item, dict):
         return None
     step_type = str(item.get("type") or "run").strip().lower()
@@ -308,9 +309,13 @@ def _normalize_step(item: Any) -> Optional[Dict[str, Any]]:
             "ask": ask or cmd or "Provide a value to continue",
             "input_id": re.sub(r"\W+", "_", input_id).strip("_").lower() or "choice",
             "options": list(item.get("options") or []) if isinstance(item.get("options"), list) else [],
+            "cleanup": "",
         }
     if not cmd:
         return None
+    cleanup = str(
+        item.get("cleanup") or item.get("revert") or item.get("undo") or ""
+    ).strip()
     return {
         "type": "run",
         "cmd": cmd,
@@ -318,6 +323,7 @@ def _normalize_step(item: Any) -> Optional[Dict[str, Any]]:
         "ask": ask,
         "input_id": "",
         "options": [],
+        "cleanup": cleanup,
     }
 
 
@@ -527,6 +533,8 @@ def plan_script_from_text(
         '    {"type":"run","cmd":"ip -br link","note":"list interfaces"},\n'
         '    {"type":"ui","input_id":"iface","ask":"Which interface should we use?",'
         '"options":[],"note":"choose after listing"},\n'
+        '    {"type":"run","cmd":"sudo airmon-ng start {{iface}}","note":"monitor mode",'
+        '"cleanup":"sudo airmon-ng stop {{iface}}mon"},\n'
         '    {"type":"run","cmd":"sudo arpspoof -i {{iface}} -t {{target}} {{gateway}}",'
         '"note":"spoof — target/gateway asked only when needed"}\n'
         "  ]\n"
@@ -537,9 +545,13 @@ def plan_script_from_text(
         "- After discovery output the runner may call AI again to build dropdown options "
         "(Ethernet/other NICs usually stay up even if a Wi‑Fi iface enters monitor mode).\n"
         "- For Wi‑Fi/monitor-mode work, prefer wireless interfaces in asks — not eth/VPN uplink cards.\n"
+        "- When a step changes host state that must be undone (monitor mode, stop NetworkManager, "
+        "add mon iface), set `cleanup` to the reverse one-liner. HatsOff runs those on exit "
+        "if the window is closed mid-script.\n"
         "- For values that cannot be shell commands (choose iface, pick host, password), "
         "use type=ui — those run in the HatsOff UI, not the shell.\n"
-        "- Order: recon/list → ask user → exploit/action.\n"
+        "- Order: recon/list → ask user → exploit/action → prefer leaving cleanup cmds for "
+        "HatsOff auto-revert rather than a long manual teardown block.\n"
         "- Max 20 steps. One command per run step.\n\n"
         f"TEXT:\n{snippet}\n"
     )
@@ -627,6 +639,7 @@ def run_script_stream(
                 "type": s.get("type") or "run",
                 "input_id": s.get("input_id") or "",
                 "options": s.get("options") or [],
+                "cleanup": s.get("cleanup") or "",
             }
             for s in steps
         ],
@@ -637,6 +650,7 @@ def run_script_stream(
         rendered_plan[i]["type"] = s.get("type") or "run"
         rendered_plan[i]["input_id"] = s.get("input_id") or ""
         rendered_plan[i]["options"] = s.get("options") or []
+        rendered_plan[i]["cleanup"] = apply_inputs(s.get("cleanup") or "", known)
 
     yield {"type": "plan", "steps": rendered_plan, "values": known}
 
@@ -710,6 +724,18 @@ def run_script_stream(
         }
         result = run_command(cmd, cwd=cwd, timeout=timeout)
         yield {"type": "step_done", "index": idx, **result}
+        if result.get("ok"):
+            cleanup_cmd = apply_inputs(step.get("cleanup") or "", known)
+            registered = session_cleanup.register_from_run(
+                cmd, ok=True, explicit_cleanup=cleanup_cmd or None
+            )
+            if registered:
+                yield {
+                    "type": "cleanup_registered",
+                    "index": idx,
+                    "description": registered.get("description"),
+                    "commands": registered.get("commands") or [],
+                }
         if stop_on_error and not result.get("ok"):
             yield {"type": "stopped", "index": idx, "reason": "command failed"}
             break
@@ -761,4 +787,10 @@ def run_script_stream(
                     "clear": True,
                 }
 
-    yield {"type": "finished", "values": known}
+    cleanup_results = session_cleanup.run_pending(cwd=cwd, reason="script_finished")
+    yield {
+        "type": "finished",
+        "values": known,
+        "cleanup_pending": session_cleanup.pending(),
+        "cleanup_results": cleanup_results,
+    }

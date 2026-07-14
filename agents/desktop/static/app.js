@@ -759,6 +759,8 @@
             );
             pre.hidden = false;
             pre.textContent = bits.join("\n");
+          } else if (payload.type === "cleanup_registered") {
+            setStatus(`Will auto-revert later: ${payload.description || "lab change"}`);
           } else if (payload.type === "need_input") {
             setStatus("Waiting for your choice on this step…");
             const stepIndex =
@@ -813,7 +815,14 @@
           } else if (payload.type === "finished") {
             const cur = panelEl.querySelector(".script-status-text");
             const t = cur ? cur.textContent || "" : "";
-            if (!/Stopped|cancelled/i.test(t)) setStatus("Script finished.");
+            if (!/Stopped|cancelled/i.test(t)) {
+              const cleaned = (payload.cleanup_results || []).length;
+              setStatus(
+                cleaned
+                  ? `Script finished — reverted ${cleaned} lab change(s).`
+                  : "Script finished."
+              );
+            }
           } else if (payload.type === "error") {
             throw new Error(payload.error || "script error");
           }

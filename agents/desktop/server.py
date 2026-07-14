@@ -282,7 +282,28 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
         if isinstance(values, dict) and values:
             command = command_runner.apply_inputs(command, {str(k): str(v) for k, v in values.items()})
         result = command_runner.run_command(command, cwd=cwd, timeout=timeout)
+        if result.get("ok"):
+            from . import session_cleanup
+
+            registered = session_cleanup.register_from_run(command, ok=True)
+            if registered:
+                result["cleanup_registered"] = registered
         return jsonify(result)
+
+    @app.get("/api/cleanup")
+    def cleanup_status():
+        from . import session_cleanup
+
+        return jsonify({"pending": session_cleanup.pending()})
+
+    @app.post("/api/cleanup")
+    def cleanup_run():
+        """Manually revert pending lab changes (monitor mode, etc.)."""
+        from . import session_cleanup
+
+        cwd = (request.get_json(silent=True) or {}).get("cwd") or os.getcwd()
+        results = session_cleanup.run_pending(cwd=cwd, reason="manual")
+        return jsonify({"ok": True, "results": results, "pending": session_cleanup.pending()})
 
     @app.post("/api/run/prepare")
     def run_prepare():
