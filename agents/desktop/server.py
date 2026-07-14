@@ -281,6 +281,19 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
         values = body.get("inputs") or body.get("values") or {}
         if isinstance(values, dict) and values:
             command = command_runner.apply_inputs(command, {str(k): str(v) for k, v in values.items()})
+        blocked = command_runner.command_kills_ethernet(command)
+        if blocked:
+            return jsonify(
+                {
+                    "ok": False,
+                    "command": command,
+                    "exit_code": None,
+                    "stdout": "",
+                    "stderr": blocked,
+                    "timed_out": False,
+                    "blocked": True,
+                }
+            ), 400
         result = command_runner.run_command(command, cwd=cwd, timeout=timeout)
         if result.get("ok"):
             from . import session_cleanup

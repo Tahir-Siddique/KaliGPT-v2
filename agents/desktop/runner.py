@@ -19,6 +19,32 @@ from . import session_cleanup
 _MAX_OUTPUT = 32_000
 _DEFAULT_TIMEOUT = 120
 
+# Commands that take down Ethernet / all NM interfaces — blocked in HatsOff scripts
+_BLOCKED_NET_KILL = re.compile(
+    r"(?i)("
+    r"airmon-ng\s+check\s+kill|"
+    r"systemctl\s+stop\s+(NetworkManager|NetworkManager\.service)|"
+    r"service\s+network-manager\s+stop|"
+    r"nmcli\s+networking\s+off|"
+    r"killall\s+NetworkManager"
+    r")"
+)
+
+
+def command_kills_ethernet(cmd: str) -> Optional[str]:
+    """Return a reason if this command would knock out eth/NM globally."""
+    text = (cmd or "").strip()
+    if not text:
+        return None
+    if _BLOCKED_NET_KILL.search(text):
+        return (
+            "Refused: this would stop NetworkManager / kill wifi helpers globally "
+            "and usually take Ethernet offline. Use wifi-only monitor mode "
+            "(nmcli device set <wlan> managed no + iw set type monitor) instead."
+        )
+    return None
+
+
 _PLACEHOLDER_RE = re.compile(
     r"\{\{\s*([a-zA-Z_][\w]*)\s*\}\}|<([a-zA-Z_][\w]*)>|\$\{([a-zA-Z_][\w]*)\}|(YOUR_[A-Z0-9_]+)"
 )
@@ -463,8 +489,9 @@ def suggest_input_after_output(
         "Prefer asking AFTER discovery commands (ip a, ifconfig, iwconfig, ip -br link, "
         "nmap host list, airmon/iw list, etc), using options taken from the output.\n"
         "If the workflow is Wi‑Fi/monitor-mode related, prefer wireless adapters "
-        "(wlan*, wlp*, wl*) — do NOT push Ethernet/VPN uplink ifaces unless the user "
-        "clearly needs them.\n"
+        "(wlan*, wlp*, wl*) — NEVER Ethernet/VPN uplink ifaces.\n"
+        "Do not suggest steps that stop NetworkManager or run airmon-ng check kill "
+        "(that kills eth internet). Monitor mode = wifi iface only.\n"
         "Return ONLY JSON:\n"
         "{\n"
         '  "need_input": true|false,\n'
@@ -531,27 +558,33 @@ def plan_script_from_text(
         '  "summary": "one sentence",\n'
         '  "steps": [\n'
         '    {"type":"run","cmd":"ip -br link","note":"list interfaces"},\n'
-        '    {"type":"ui","input_id":"iface","ask":"Which interface should we use?",'
-        '"options":[],"note":"choose after listing"},\n'
-        '    {"type":"run","cmd":"sudo airmon-ng start {{iface}}","note":"monitor mode",'
-        '"cleanup":"sudo airmon-ng stop {{iface}}mon"},\n'
-        '    {"type":"run","cmd":"sudo arpspoof -i {{iface}} -t {{target}} {{gateway}}",'
-        '"note":"spoof — target/gateway asked only when needed"}\n'
+        '    {"type":"ui","input_id":"iface","ask":"Which wireless interface for monitor mode?",'
+        '"options":[],"note":"wifi only — keep eth for internet"},\n'
+        '    {"type":"run","cmd":"sudo nmcli device set {{iface}} managed no; '
+        'sudo ip link set {{iface}} down; sudo iw dev {{iface}} set type monitor; '
+        'sudo ip link set {{iface}} up","note":"monitor mode on WIFI only — do not touch eth",'
+        '"cleanup":"sudo ip link set {{iface}} down; sudo iw dev {{iface}} set type managed; '
+        'sudo ip link set {{iface}} up; sudo nmcli device set {{iface}} managed yes"},\n'
+        '    {"type":"run","cmd":"sudo airodump-ng {{iface}}","note":"capture"}\n'
         "  ]\n"
         "}\n\n"
         "Rules:\n"
         "- Prefer mid-run questions (type=ui) AFTER discovery commands, not a big form at start.\n"
         "- Use {{placeholders}} in later run steps; the UI will pause when they are still missing.\n"
-        "- After discovery output the runner may call AI again to build dropdown options "
-        "(Ethernet/other NICs usually stay up even if a Wi‑Fi iface enters monitor mode).\n"
-        "- For Wi‑Fi/monitor-mode work, prefer wireless interfaces in asks — not eth/VPN uplink cards.\n"
-        "- When a step changes host state that must be undone (monitor mode, stop NetworkManager, "
-        "add mon iface), set `cleanup` to the reverse one-liner. HatsOff runs those on exit "
-        "if the window is closed mid-script.\n"
+        "- After discovery output the runner may call AI again to build dropdown options.\n"
+        "- **Ethernet must stay up for HatsOff/internet.** Never run: `airmon-ng check kill`, "
+        "`systemctl stop NetworkManager`, `service network-manager stop`, or kill NM/wpa globally.\n"
+        "- For monitor mode: ONLY the chosen wireless iface. Prefer:\n"
+        "  `nmcli device set <wlan> managed no` + `iw dev <wlan> set type monitor` "
+        "(or equivalent). Do NOT use airmon-ng check kill. Avoid `airmon-ng start` unless "
+        "the user insists (it often kills networking).\n"
+        "- Never choose eth*/enp*/wired for monitor mode. Options should be wlan*/wlp*/wl* only "
+        "for Wi‑Fi tasks.\n"
+        "- When a step changes host state, set `cleanup` to reverse ONLY that wifi iface "
+        "(managed yes + type managed). Do not restart/stop NM as part of monitor setup.\n"
         "- For values that cannot be shell commands (choose iface, pick host, password), "
         "use type=ui — those run in the HatsOff UI, not the shell.\n"
-        "- Order: recon/list → ask user → exploit/action → prefer leaving cleanup cmds for "
-        "HatsOff auto-revert rather than a long manual teardown block.\n"
+        "- Order: recon/list → ask user → exploit/action.\n"
         "- Max 20 steps. One command per run step.\n\n"
         f"TEXT:\n{snippet}\n"
     )
@@ -722,6 +755,20 @@ def run_script_stream(
             "note": note,
             "message": "Running command…",
         }
+        blocked = command_kills_ethernet(cmd)
+        if blocked:
+            result = {
+                "ok": False,
+                "command": cmd,
+                "exit_code": None,
+                "stdout": "",
+                "stderr": blocked,
+                "timed_out": False,
+                "cwd": cwd or os.getcwd(),
+            }
+            yield {"type": "step_done", "index": idx, **result}
+            yield {"type": "stopped", "index": idx, "reason": "blocked_ethernet_kill"}
+            break
         result = run_command(cmd, cwd=cwd, timeout=timeout)
         yield {"type": "step_done", "index": idx, **result}
         if result.get("ok"):

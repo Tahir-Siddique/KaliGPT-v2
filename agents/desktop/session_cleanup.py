@@ -120,7 +120,18 @@ def _infer_from_command(cmd: str) -> Optional[Dict[str, Any]]:
             "key": f"monitor-iface:{mon}",
         }
 
-    # stop NetworkManager (often required before monitor mode)
+    # nmcli device set wlan0 managed no
+    m = re.search(r"\bnmcli\s+device\s+set\s+(\S+)\s+managed\s+no\b", text, re.I)
+    if m:
+        iface = m.group(1).strip()
+        return {
+            "kind": "nm_unmanage",
+            "description": f"Return {iface} to NetworkManager management",
+            "commands": [f"sudo nmcli device set {iface} managed yes || true"],
+            "key": f"nm_unmanage:{iface}",
+        }
+
+    # stop NetworkManager (legacy / should be blocked in runner — still reversible)
     if re.search(
         r"\b(systemctl\s+stop\s+(NetworkManager|NetworkManager\.service)|"
         r"service\s+network-manager\s+stop|"
