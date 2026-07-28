@@ -49,6 +49,38 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
     def environment():
         return jsonify(command_runner.detect_environment())
 
+    @app.post("/api/environment/ensure")
+    def environment_ensure():
+        """
+        Make Windows lab-ready: install WSL/Kali via elevated UAC if needed.
+        On Linux this is a no-op when bash is already available.
+        """
+        from . import wsl_lab
+
+        env = command_runner.detect_environment()
+        if env.get("lab_ready"):
+            return jsonify({"ok": True, "action": "none", "environment": env})
+        if env.get("system") == "windows":
+            result = wsl_lab.ensure_lab_backend()
+            env2 = command_runner.detect_environment()
+            return jsonify(
+                {
+                    "ok": bool(result.get("ok")),
+                    "action": result.get("action"),
+                    "detail": result.get("detail"),
+                    "status": result.get("status"),
+                    "environment": env2,
+                }
+            )
+        return jsonify(
+            {
+                "ok": False,
+                "action": "unsupported",
+                "error": "Lab backend auto-install is only available on Windows (WSL).",
+                "environment": env,
+            }
+        ), 400
+
     @app.get("/api/providers")
     def providers():
         names = get_available_ais()
@@ -272,6 +304,7 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
 
     @app.post("/api/run")
     def run_one():
+        """Manual Run on a single command — operator choice; no internet-kill block."""
         body = request.get_json(silent=True) or {}
         command = (body.get("command") or body.get("cmd") or "").strip()
         if not command:
@@ -281,19 +314,6 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
         values = body.get("inputs") or body.get("values") or {}
         if isinstance(values, dict) and values:
             command = command_runner.apply_inputs(command, {str(k): str(v) for k, v in values.items()})
-        blocked = command_runner.command_kills_ethernet(command)
-        if blocked:
-            return jsonify(
-                {
-                    "ok": False,
-                    "command": command,
-                    "exit_code": None,
-                    "stdout": "",
-                    "stderr": blocked,
-                    "timed_out": False,
-                    "blocked": True,
-                }
-            ), 400
         result = command_runner.run_command(command, cwd=cwd, timeout=timeout)
         if result.get("ok"):
             from . import session_cleanup

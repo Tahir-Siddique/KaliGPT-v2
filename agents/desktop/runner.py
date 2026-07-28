@@ -92,39 +92,259 @@ def command_succeeded(command: str, *, exit_code: Optional[int], timed_out: bool
     return False
 
 
-# Commands that take down Ethernet / all NM interfaces — blocked in HatsOff scripts
+# Commands that take down Ethernet / all networking — blocked in HatsOff scripts
 _BLOCKED_NET_KILL = re.compile(
     r"(?i)("
     r"airmon-ng\s+check\s+kill|"
-    r"systemctl\s+stop\s+(NetworkManager|NetworkManager\.service)|"
-    r"service\s+network-manager\s+stop|"
+    r"airmon-ng\s+start\b|"  # often invokes check kill / kills NM
+    r"systemctl\s+(stop|disable|mask)\s+"
+    r"(NetworkManager|NetworkManager\.service|networking|wpa_supplicant|systemd-networkd)"
+    r"|"
+    r"service\s+(network-manager|networking|NetworkManager|wpa_supplicant)\s+stop|"
     r"nmcli\s+networking\s+off|"
-    r"killall\s+NetworkManager"
+    r"nmcli\s+radio\s+(all|wifi)\s+off|"
+    r"killall\s+(NetworkManager|wpa_supplicant|wpa_cli)|"
+    r"pkill\s+.*\b(NetworkManager|wpa_supplicant)\b|"
+    r"rfkill\s+block\s+all|"
+    r"ip\s+link\s+set\s+(eth\w*|enp\w*|eno\w*|ens\w*|em\w*)\s+down|"
+    r"ifconfig\s+(eth\w*|enp\w*|eno\w*|ens\w*)\s+down|"
+    r"ifdown\s+(eth\w*|enp\w*|eno\w*|ens\w*)|"
+    r"nmcli\s+(device|dev)\s+(disconnect|down)\s+(eth\w*|enp\w*|eno\w*|ens\w*)|"
+    r"dhclient\s+-r\s+(eth\w*|enp\w*|eno\w*|ens\w*)"
     r")"
 )
 
+# Safe read-only recon run BEFORE the AI plans relevant commands
+_PREKNOWLEDGE_COMMANDS: List[Tuple[str, str]] = [
+    ("links", "ip -br link 2>/dev/null || ip link"),
+    ("addrs", "ip -br addr 2>/dev/null || ip addr"),
+    ("routes", "ip route show default 2>/dev/null; ip route | head -n 20"),
+    (
+        "nm_devices",
+        "nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>/dev/null || true",
+    ),
+    ("iw_dev", "iw dev 2>/dev/null || true"),
+    ("wifi", "iwconfig 2>/dev/null | head -n 50 || true"),
+]
+
 
 def command_kills_ethernet(cmd: str) -> Optional[str]:
-    """Return a reason if this command would knock out eth/NM globally."""
+    """
+    Return a reason if this command would knock out eth/internet.
+
+    Used only for **agent auto-run** (script stream / planned steps) so HatsOff
+    can keep collecting data without dropping the uplink. Manual single-command
+    Run from the UI is intentionally unrestricted.
+    """
     text = (cmd or "").strip()
     if not text:
         return None
     if _BLOCKED_NET_KILL.search(text):
         return (
-            "Refused: this would stop NetworkManager / kill wifi helpers globally "
-            "and usually take Ethernet offline. Use wifi-only monitor mode "
-            "(nmcli device set <wlan> managed no + iw set type monitor) instead."
+            "Auto-run skipped: this would disconnect internet / stop NetworkManager / "
+            "bring Ethernet down. Prefer wifi-only monitor mode "
+            "(nmcli device set <wlan> managed no + iw set type monitor). "
+            "You can still run this command manually with the Run button if you choose."
         )
     return None
+
+
+def gather_preknowledge(*, timeout_each: int = 25) -> Dict[str, Any]:
+    """
+    Run safe, read-only lab recon so the planner can emit relevant commands
+    (real ifaces, routes, wifi adapters) without guessing.
+    """
+    sections: List[str] = []
+    raw: Dict[str, str] = {}
+    ran: List[str] = []
+    _log("Gathering pre-knowledge (safe recon)…")
+    for key, cmd in _PREKNOWLEDGE_COMMANDS:
+        # Pre-knowledge is always auto-run — never include net-kill cmds
+        if command_kills_ethernet(cmd):
+            continue
+        try:
+            result = run_command(cmd, timeout=timeout_each, auto_install=False)
+        except Exception as exc:
+            raw[key] = f"(failed: {exc})"
+            continue
+        text = (
+            (result.get("stdout") or "")
+            + (("\n" + result.get("stderr")) if (result.get("stderr") or "").strip() else "")
+        ).strip()
+        raw[key] = text[:5000]
+        ran.append(cmd)
+        if text:
+            sections.append(f"### {key}\n$ {cmd}\n{text[:5000]}")
+    blob = "\n\n".join(sections).strip()
+    _log(f"Pre-knowledge gathered ({len(sections)} sections, {len(blob)} chars)")
+    return {
+        "ok": bool(sections),
+        "text": blob[:14000],
+        "sections": raw,
+        "commands": ran,
+    }
+
+
+def sanitize_plan_steps(
+    steps: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Drop auto-run steps that would disconnect internet (manual Run still allowed)."""
+    kept: List[Dict[str, Any]] = []
+    blocked: List[Dict[str, str]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        stype = (step.get("type") or "run").lower()
+        cmd = (step.get("cmd") or "").strip()
+        cleanup = (step.get("cleanup") or "").strip()
+        if stype == "run" and cmd:
+            reason = command_kills_ethernet(cmd)
+            if reason:
+                blocked.append({"cmd": cmd, "reason": reason})
+                _log(f"Blocked auto-run plan step (internet risk): {cmd}")
+                continue
+        if cleanup and command_kills_ethernet(cleanup):
+            step = {**step, "cleanup": ""}
+            _log(f"Stripped unsafe auto-run cleanup from step: {cmd or step.get('ask')}")
+        kept.append(step)
+    return kept, blocked
 
 
 _PLACEHOLDER_RE = re.compile(
     r"\{\{\s*([a-zA-Z_][\w]*)\s*\}\}|<([a-zA-Z_][\w]*)>|\$\{([a-zA-Z_][\w]*)\}|(YOUR_[A-Z0-9_]+)"
 )
 
+# Paths written by lab tools (airodump -w, nmap -oN, redirects, tee)
+_OUTPUT_PATH_RE = re.compile(
+    r"(?ix)"
+    r"(?:(?:-w|--write|-oN|-oX|-oG|-oA|-o)\s+|tee(?:\s+-a)?\s+|(?:>>|>)\s*)"
+    r"['\"]?(/[^\s;|&'\"]+|[A-Za-z]:\\[^\s;|&'\"]+|[\w./-]+\.(?:csv|cap|pcap|txt|log|xml|gnmap|json))"
+)
+
+_DISCOVERY_CMD_RE = re.compile(
+    r"(?i)\b("
+    r"ip|iw|iwconfig|ifconfig|nmcli|airodump-ng|aireplay-ng|airmon-ng|"
+    r"nmap|masscan|arp-scan|netdiscover|tcpdump|tshark|cat|ls|iwlist"
+    r")\b"
+)
+
+
+def _candidate_log_paths(command: str) -> List[str]:
+    """Guess files a command wrote (prefix paths expand to airodump -01.csv etc.)."""
+    found: List[str] = []
+    for m in _OUTPUT_PATH_RE.finditer(command or ""):
+        p = (m.group(1) or "").strip().strip("'\"")
+        if p and p not in found:
+            found.append(p)
+    # Common HatsOff survey prefix even if regex missed flags
+    if re.search(r"(?i)airodump-ng", command or ""):
+        for p in ("/tmp/hatsoff_survey", "/tmp/hatsoff_survey-01.csv"):
+            if p not in found:
+                found.append(p)
+    expanded: List[str] = []
+    for p in found:
+        expanded.append(p)
+        base = p
+        # airodump -w PREFIX → PREFIX-01.csv
+        if not re.search(r"\.\w+$", base) or base.endswith(".csv") is False:
+            for suf in ("-01.csv", "-01.kismet.csv", "-01.cap", ".csv", ".txt", ".log"):
+                if not base.endswith(suf):
+                    expanded.append(base + suf)
+        # Also try PREFIX-01.csv when path already ends oddly
+        if "-01." not in base and not base.endswith(".csv"):
+            expanded.append(base + "-01.csv")
+    # de-dupe preserve order
+    out: List[str] = []
+    for p in expanded:
+        if p not in out:
+            out.append(p)
+    return out[:40]
+
+
+def collect_command_logs(command: str, *, max_chars: int = 14000) -> str:
+    """
+    Read log/artifact files produced by the last command (via Kali/WSL shell).
+    Essential for airodump/nmap which write files instead of useful stdout.
+    """
+    paths = _candidate_log_paths(command)
+    if not paths:
+        return ""
+    # Prefer newest matching files under /tmp for survey prefix
+    shell_script = (
+        "paths=("
+        + " ".join(shlex_quote(p) for p in paths)
+        + "); "
+        "for p in \"${paths[@]}\"; do "
+        "  if [ -f \"$p\" ]; then "
+        "    echo \"===== FILE: $p =====\"; "
+        "    # Prefer last 200 lines so large dumps stay useful"
+        "    tail -n 200 \"$p\" 2>/dev/null || cat \"$p\" 2>/dev/null; "
+        "    echo; "
+        "  elif [ -d \"$p\" ]; then "
+        "    echo \"===== DIR: $p =====\"; ls -la \"$p\" 2>/dev/null; echo; "
+        "  else "
+        "    # glob PREFIX* (airodump)"
+        "    for g in \"$p\"*; do "
+        "      [ -f \"$g\" ] || continue; "
+        "      echo \"===== FILE: $g =====\"; "
+        "      tail -n 200 \"$g\" 2>/dev/null; echo; "
+        "    done; "
+        "  fi; "
+        "done"
+    )
+    try:
+        # Avoid recursive auto_install when collecting logs
+        result = run_command(shell_script, timeout=45, auto_install=False)
+        text = ((result.get("stdout") or "") + "\n" + (result.get("stderr") or "")).strip()
+        if not text or "===== FILE:" not in text:
+            return ""
+        if len(text) > max_chars:
+            return text[-max_chars:]
+        return text
+    except Exception as exc:
+        _log(f"collect_command_logs failed: {exc}")
+        return ""
+
+
+def shlex_quote(s: str) -> str:
+    """POSIX single-quote for embedding paths in bash -lc."""
+    return "'" + (s or "").replace("'", "'\"'\"'") + "'"
+
+
+def build_analysis_log(
+    command: str,
+    *,
+    stdout: str = "",
+    stderr: str = "",
+    artifacts: Optional[str] = None,
+) -> str:
+    """Combine stdout/stderr with on-disk command artifacts for AI analysis."""
+    parts: List[str] = []
+    out = (stdout or "").strip()
+    err = (stderr or "").strip()
+    if out:
+        parts.append("=== STDOUT ===\n" + out)
+    if err:
+        parts.append("=== STDERR ===\n" + err)
+    art = artifacts
+    if art is None and (
+        _OUTPUT_PATH_RE.search(command or "") or _DISCOVERY_CMD_RE.search(command or "")
+    ):
+        _log("Reading command log files for AI analysis…")
+        art = collect_command_logs(command)
+    if art:
+        parts.append("=== LOG FILES / ARTIFACTS ===\n" + art)
+    combined = "\n\n".join(parts).strip()
+    if len(combined) > 16000:
+        combined = combined[-16000:]
+    return combined
+
+
 
 def detect_environment() -> Dict[str, Any]:
-    """Describe host OS / whether Kali (or WSL Kali) is available."""
+    """Describe host OS / whether Kali (or WSL) is available for lab Run."""
+    from . import wsl_lab
+
     system = platform.system().lower()
     release = platform.release()
     version = platform.version()
@@ -145,89 +365,163 @@ def detect_environment() -> Dict[str, Any]:
             pass
 
     bash = shutil.which("bash")
+    wsl_distros: List[str] = []
+    wsl_distro: Optional[str] = None
     wsl_kali = False
+    wsl_present = False
     if system == "windows":
-        # Prefer `wsl -d kali-linux` when installed
-        wsl = shutil.which("wsl")
-        if wsl:
-            try:
-                listed = subprocess.run(
-                    [wsl, "-l", "-q"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    encoding="utf-8",
-                    errors="ignore",
-                )
-                names = (listed.stdout or "").lower().replace("\x00", "")
-                wsl_kali = "kali" in names
-            except Exception:
-                wsl_kali = False
+        wsl_present = bool(wsl_lab.wsl_exe())
+        wsl_distros = wsl_lab.list_wsl_distros() if wsl_present else []
+        wsl_distro = wsl_lab.pick_wsl_distro() if wsl_distros else None
+        wsl_kali = bool(wsl_distro and "kali" in wsl_distro.lower())
 
     mode = "generic"
     if is_kali:
         mode = "kali-native"
     elif wsl_kali:
         mode = "kali-wsl"
+    elif wsl_distro:
+        mode = "wsl-linux"
     elif system == "linux":
         mode = "linux"
     elif system == "windows":
         mode = "windows"
 
+    shell_labels = {
+        "kali-native": "Kali Linux (/bin/bash)",
+        "kali-wsl": f"Kali Linux (WSL: {wsl_distro})",
+        "wsl-linux": f"WSL ({wsl_distro})",
+        "linux": "Linux bash",
+        "windows": "Windows shell",
+        "generic": "System shell",
+    }
+
     return {
         "system": system,
         "is_kali": is_kali or wsl_kali,
-        "is_wsl": is_wsl,
+        "is_wsl": is_wsl or bool(wsl_distro),
+        "wsl_present": wsl_present if system == "windows" else is_wsl,
         "wsl_kali": wsl_kali,
+        "wsl_distro": wsl_distro,
+        "wsl_distros": wsl_distros,
+        "lab_ready": bool(
+            is_kali
+            or (system == "linux" and bash)
+            or wsl_distro
+        ),
         "bash": bash,
         "mode": mode,
-        "shell_label": {
-            "kali-native": "Kali Linux (/bin/bash)",
-            "kali-wsl": "Kali Linux (WSL)",
-            "linux": "Linux bash",
-            "windows": "Windows shell",
-            "generic": "System shell",
-        }.get(mode, "System shell"),
+        "shell_label": shell_labels.get(mode, "System shell"),
+        # Windows lab Run requires a WSL distro (Kali preferred).
+        "run_allowed": bool(
+            is_kali
+            or (system == "linux" and bash)
+            or wsl_distro
+        ),
+        "bootstrap": wsl_lab.bootstrap_status() if system == "windows" else None,
     }
 
 
 def resolve_shell() -> Tuple[Optional[str], List[str]]:
     """
-    Return (executable, prefix_argv) for Kali-compatible command execution.
+    Return (executable, prefix_argv) for lab command execution.
 
     On Kali/Linux: /bin/bash -lc
-    On Windows with kali-linux WSL: wsl -d kali-linux -- bash -lc
-    Else: None → subprocess shell=True default
+    On Windows with any WSL distro (Kali preferred): wsl -d Distro -- bash -lc
+    Else: None → subprocess shell=True (Windows cmd)
     """
+    from . import wsl_lab
+
     env = detect_environment()
     if env["mode"] == "kali-native" or (env["system"] == "linux" and env["bash"]):
         bash = env["bash"] or "/bin/bash"
         return bash, [bash, "-lc"]
-    if env["mode"] == "kali-wsl":
-        wsl = shutil.which("wsl")
-        if wsl:
-            # Discover exact distro name containing kali
-            distro = "kali-linux"
-            try:
-                listed = subprocess.run(
-                    [wsl, "-l", "-q"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    encoding="utf-8",
-                    errors="ignore",
-                )
-                for line in (listed.stdout or "").replace("\x00", "").splitlines():
-                    name = line.strip()
-                    if "kali" in name.lower():
-                        distro = name
-                        break
-            except Exception:
-                pass
-            return wsl, [wsl, "-d", distro, "--", "bash", "-lc"]
+    if env["mode"] in {"kali-wsl", "wsl-linux"}:
+        wsl, prefix, _distro = wsl_lab.resolve_wsl_shell()
+        if wsl and prefix:
+            return wsl, prefix
+    if env["system"] == "windows":
+        # Prefer WSL even if cache was empty earlier
+        wsl, prefix, _distro = wsl_lab.resolve_wsl_shell()
+        if wsl and prefix:
+            return wsl, prefix
     if env["system"] != "windows" and env["bash"]:
         return env["bash"], [env["bash"], "-lc"]
     return None, []
+
+
+def _ensure_missing_packages(
+    command: str,
+    *,
+    stderr: str = "",
+    stdout: str = "",
+    env_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Install missing tools as root (WSL -u root, or local sudo/root)."""
+    from . import wsl_lab
+
+    info = env_info or detect_environment()
+    mode = info.get("mode")
+    if mode in {"kali-wsl", "wsl-linux"} or (
+        info.get("system") == "windows" and info.get("wsl_distro")
+    ):
+        return wsl_lab.ensure_command_packages_from_failure(
+            command,
+            stderr=stderr,
+            stdout=stdout,
+            distro=info.get("wsl_distro"),
+        )
+    if info.get("system") == "linux":
+        return wsl_lab.ensure_command_packages_native(
+            command, stderr=stderr, stdout=stdout
+        )
+    return {"ok": False, "skipped": True, "attempted": []}
+
+
+def _run_once(
+    cmd: str,
+    *,
+    prefix: List[str],
+    workdir: str,
+    env_info: Dict[str, Any],
+    use_timeout: int,
+) -> Dict[str, Any]:
+    wsl_cwd = env_info.get("mode") in {"kali-wsl", "wsl-linux"}
+    if prefix:
+        completed = subprocess.run(
+            prefix + [cmd],
+            cwd=None if wsl_cwd else workdir,
+            capture_output=True,
+            text=True,
+            timeout=use_timeout,
+        )
+    else:
+        completed = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=use_timeout,
+        )
+    stdout = (completed.stdout or "")[-_MAX_OUTPUT:]
+    stderr = (completed.stderr or "")[-_MAX_OUTPUT:]
+    code = completed.returncode
+    ok = command_succeeded(cmd, exit_code=code, timed_out=False)
+    if code == 124 and _TIMEOUT_CMD_RE.search(cmd):
+        note = "Stopped after planned timeout (exit 124) — treating as success for survey capture."
+        stderr = f"{stderr.rstrip()}\n{note}" if stderr else note
+    return {
+        "ok": ok,
+        "command": cmd,
+        "exit_code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "timed_out": False,
+        "cwd": workdir,
+        "shell": env_info.get("shell_label"),
+        "applied_timeout": use_timeout,
+    }
 
 
 def run_command(
@@ -235,8 +529,11 @@ def run_command(
     *,
     cwd: Optional[str] = None,
     timeout: int = _DEFAULT_TIMEOUT,
+    auto_install: bool = True,
 ) -> Dict[str, Any]:
-    """Run one shell command — prefers Kali/bash when available."""
+    """Run one shell command — prefers Kali/bash/WSL when available."""
+    from . import wsl_lab
+
     cmd = (command or "").strip()
     if not cmd:
         return {
@@ -249,51 +546,94 @@ def run_command(
         }
 
     workdir = cwd or os.getcwd()
-    exe, prefix = resolve_shell()
     env_info = detect_environment()
+
+    # Windows without WSL: start elevated Kali/WSL install, then stop this run.
+    if env_info.get("system") == "windows" and not env_info.get("wsl_distro"):
+        _log("No WSL distro — starting elevated lab backend install…")
+        boot = wsl_lab.ensure_lab_backend()
+        env_info = detect_environment()
+        if not env_info.get("wsl_distro"):
+            detail = (boot.get("detail") or {}).get("stdout") or (
+                "Approve the UAC prompt to install WSL/Kali, then reboot if Windows asks."
+            )
+            result = {
+                "ok": False,
+                "command": cmd,
+                "exit_code": None,
+                "stdout": "",
+                "stderr": (
+                    "Lab commands on Windows need WSL. "
+                    f"{detail}"
+                ),
+                "timed_out": False,
+                "cwd": workdir,
+                "shell": env_info.get("shell_label"),
+                "bootstrap": boot,
+            }
+            _log_command_result(result)
+            return result
+
+    exe, prefix = resolve_shell()
     use_timeout = effective_timeout(cmd, timeout)
     shell = env_info.get("shell_label") or "shell"
     _log(f"RUN  [{shell}]  timeout≈{use_timeout}s")
     _log(f"$ {cmd}")
     try:
-        if prefix:
-            completed = subprocess.run(
-                prefix + [cmd],
-                cwd=workdir if env_info["mode"] != "kali-wsl" else None,
-                capture_output=True,
-                text=True,
-                timeout=use_timeout,
+        result = _run_once(
+            cmd,
+            prefix=prefix,
+            workdir=workdir,
+            env_info=env_info,
+            use_timeout=use_timeout,
+        )
+        # Missing binary → apt install as root, then retry once
+        if (
+            auto_install
+            and not result.get("ok")
+            and not result.get("timed_out")
+            and (
+                env_info.get("mode") in {"kali-wsl", "wsl-linux", "kali-native", "linux"}
+                or env_info.get("wsl_distro")
             )
-        else:
-            completed = subprocess.run(
-                cmd,
-                shell=True,
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                timeout=use_timeout,
+        ):
+            from . import wsl_lab as _wl
+
+            missing = _wl.missing_commands_from_output(
+                result.get("stderr") or "", result.get("stdout") or ""
             )
-        stdout = (completed.stdout or "")[-_MAX_OUTPUT:]
-        stderr = (completed.stderr or "")[-_MAX_OUTPUT:]
-        code = completed.returncode
-        ok = command_succeeded(cmd, exit_code=code, timed_out=False)
-        if code == 124 and _TIMEOUT_CMD_RE.search(cmd):
-            note = "Stopped after planned timeout (exit 124) — treating as success for survey capture."
-            if stderr:
-                stderr = f"{stderr.rstrip()}\n{note}"
-            else:
-                stderr = note
-        result = {
-            "ok": ok,
-            "command": cmd,
-            "exit_code": code,
-            "stdout": stdout,
-            "stderr": stderr,
-            "timed_out": False,
-            "cwd": workdir,
-            "shell": env_info.get("shell_label"),
-            "applied_timeout": use_timeout,
-        }
+            looks_missing = bool(missing) or (
+                result.get("exit_code") in {127, 1}
+                and "not found" in (result.get("stderr") or "").lower()
+            )
+            if looks_missing or missing:
+                _log("Command looks missing — attempting root apt install…")
+                install = _ensure_missing_packages(
+                    cmd,
+                    stderr=result.get("stderr") or "",
+                    stdout=result.get("stdout") or "",
+                    env_info=env_info,
+                )
+                result["auto_install"] = {
+                    "attempted": install.get("attempted") or install.get("installed") or [],
+                    "ok": bool(install.get("ok")),
+                    "stderr": (install.get("stderr") or "")[-800:],
+                }
+                if install.get("ok") or (
+                    install.get("attempted") and not install.get("skipped")
+                ):
+                    _log("Retrying command after package install…")
+                    retry = _run_once(
+                        cmd,
+                        prefix=prefix,
+                        workdir=workdir,
+                        env_info=env_info,
+                        use_timeout=use_timeout,
+                    )
+                    retry["auto_install"] = result["auto_install"]
+                    retry["retried_after_install"] = True
+                    _log_command_result(retry)
+                    return retry
         _log_command_result(result)
         return result
     except subprocess.TimeoutExpired as exc:
@@ -577,63 +917,104 @@ def suggest_input_after_output(
     values: Dict[str, str],
     model: Optional[str] = None,
     cwd: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
-    After a discovery command, ask AI whether the user must choose something
-    (e.g. network interface) before later steps.
+    Read command logs/output and decide:
+    - extracted_values: clear answers taken from the logs (auto-fill placeholders)
+    - ask: optional UI question when the user must choose among candidates
     """
     rem = remaining_steps[:8]
-    out = (last_output or "")[:6000]
+    out = (last_output or "")[:14000]
     prompt = (
         "You are driving an authorized pentest-lab script runner.\n"
-        "A command just finished. Decide if the USER must answer something NOW "
-        "before the next steps (choose interface, target from a list, port, yes/no, etc).\n"
-        "Prefer asking AFTER discovery commands (ip a, ifconfig, iwconfig, ip -br link, "
-        "nmap host list, airmon/iw list, etc), using options taken from the output.\n"
-        "If the workflow is Wi‑Fi/monitor-mode related, prefer wireless adapters "
-        "(wlan*, wlp*, wl*) — NEVER Ethernet/VPN uplink ifaces.\n"
-        "Do not suggest steps that stop NetworkManager or run airmon-ng check kill "
-        "(that kills eth internet). Monitor mode = wifi iface only.\n"
+        "A command just finished. READ its logs/output carefully (stdout, stderr, "
+        "and any LOG FILES / ARTIFACTS such as airodump CSV). Identify answers "
+        "for the next steps from those logs — do NOT invent values that are not there.\n\n"
+        "Rules:\n"
+        "- Fill extracted_values when the logs clearly show the value "
+        "(one wireless iface, one BSSID/ESSID the user likely wants, open port, IP, etc.).\n"
+        "- If several candidates exist for a key the next steps need, set need_input=true "
+        "and put those candidates in options (copied from the logs).\n"
+        "- If exactly one sensible candidate exists, put it in extracted_values and "
+        "need_input=false (do not bother the user).\n"
+        "- For Wi‑Fi/monitor workflows prefer wlan*/wlp*/wl* — NEVER eth*/enp* for monitor mode.\n"
+        "- Parse airodump CSV blocks: BSSID, channel, ESSID / Station lines when present.\n"
+        "- Do NOT overwrite values already in 'Already known values'.\n"
+        "- Keys must match placeholders the remaining steps use "
+        "(iface, bssid, essid, channel, target, host, port, …).\n\n"
         "Return ONLY JSON:\n"
         "{\n"
+        '  "extracted_values": {"iface": "wlan0", "bssid": "AA:BB:CC:DD:EE:FF"},\n'
         '  "need_input": true|false,\n'
-        '  "id": "iface",\n'
-        '  "label": "Which interface?",\n'
-        '  "reason": "Next ARP spoof step needs it",\n'
-        '  "options": ["eth0", "wlan0"],\n'
+        '  "id": "bssid",\n'
+        '  "label": "Which AP / BSSID to target?",\n'
+        '  "reason": "Taken from airodump survey CSV",\n'
+        '  "options": ["AA:BB:… (HomeWiFi ch6)", "11:22:…"],\n'
         '  "secret": false,\n'
-        '  "allow_custom": true\n'
+        '  "allow_custom": true,\n'
+        '  "finding": "one-line summary of what the logs showed"\n'
         "}\n"
-        "If nothing is needed yet, need_input=false.\n"
-        "Do NOT ask for values already provided.\n"
+        "If nothing useful is in the logs, extracted_values={} and need_input=false.\n"
         f"Already known values: {json.dumps(values)}\n"
         f"Last command: {last_cmd}\n"
-        f"Last output:\n{out}\n"
+        f"Last logs/output:\n{out}\n"
         f"Remaining steps: {json.dumps(rem)}\n"
     )
+    empty: Dict[str, Any] = {
+        "extracted_values": {},
+        "need_input": False,
+        "ask": None,
+        "finding": "",
+    }
     try:
         raw = _ask_model_text(provider, prompt, model=model, cwd=cwd)
         data = _extract_json_value(raw)
-        if not isinstance(data, dict) or not data.get("need_input"):
-            return None
-        key = str(data.get("id") or data.get("name") or "choice").strip()
-        key = re.sub(r"\W+", "_", key).strip("_").lower() or "choice"
-        if any(k.lower() == key and str(v).strip() for k, v in values.items()):
-            return None
-        options = data.get("options") or []
-        if not isinstance(options, list):
-            options = []
-        options = [str(o).strip() for o in options if str(o).strip()][:30]
+        if not isinstance(data, dict):
+            return empty
+        extracted_raw = data.get("extracted_values") or data.get("values") or {}
+        extracted: Dict[str, str] = {}
+        if isinstance(extracted_raw, dict):
+            for k, v in extracted_raw.items():
+                key = re.sub(r"\W+", "_", str(k)).strip("_").lower()
+                val = str(v).strip()
+                if not key or not val:
+                    continue
+                # Don't overwrite known
+                if any(
+                    existing.lower() == key and str(ev).strip()
+                    for existing, ev in values.items()
+                ):
+                    continue
+                # Strip "ESSID (note)" style option labels down to first token when MAC-like
+                extracted[key] = val
+        finding = str(data.get("finding") or data.get("summary") or "").strip()
+        ask = None
+        if data.get("need_input"):
+            key = str(data.get("id") or data.get("name") or "choice").strip()
+            key = re.sub(r"\W+", "_", key).strip("_").lower() or "choice"
+            if not any(k.lower() == key and str(v).strip() for k, v in values.items()):
+                if key not in extracted or len(data.get("options") or []) > 1:
+                    options = data.get("options") or []
+                    if not isinstance(options, list):
+                        options = []
+                    options = [str(o).strip() for o in options if str(o).strip()][:30]
+                    ask = {
+                        "id": key,
+                        "label": str(data.get("label") or key).strip(),
+                        "reason": str(data.get("reason") or finding or "").strip(),
+                        "options": options,
+                        "secret": bool(data.get("secret")),
+                        "allow_custom": bool(data.get("allow_custom", True)),
+                    }
         return {
-            "id": key,
-            "label": str(data.get("label") or key).strip(),
-            "reason": str(data.get("reason") or "").strip(),
-            "options": options,
-            "secret": bool(data.get("secret")),
-            "allow_custom": bool(data.get("allow_custom", True)),
+            "extracted_values": extracted,
+            "need_input": bool(ask),
+            "ask": ask,
+            "finding": finding,
         }
-    except Exception:
-        return None
+    except Exception as exc:
+        _log(f"suggest_input_after_output failed: {exc}")
+        return empty
 
 
 def plan_script_from_text(
@@ -642,14 +1023,35 @@ def plan_script_from_text(
     *,
     model: Optional[str] = None,
     cwd: Optional[str] = None,
+    preknowledge: Optional[Dict[str, Any]] = None,
+    gather_facts: bool = True,
 ) -> Dict[str, Any]:
     """
     Build an ordered lab script. Prefer discover-then-ask mid-run.
-    Do NOT require a big upfront inputs form — use {{placeholders}} and type=ui steps.
+    Optionally gather safe pre-knowledge (ifaces/routes/wifi) first so commands
+    match the real lab — never plan internet-killing commands.
     """
     snippet = (source_text or "").strip()
     if len(snippet) > 12000:
         snippet = snippet[:12000]
+
+    prek = preknowledge
+    if gather_facts and prek is None:
+        try:
+            prek = gather_preknowledge()
+        except Exception as exc:
+            _log(f"preknowledge failed: {exc}")
+            prek = {"ok": False, "text": "", "sections": {}, "commands": []}
+
+    prek_block = ""
+    if prek and (prek.get("text") or "").strip():
+        prek_block = (
+            "\n\nLAB PRE-KNOWLEDGE (already gathered with safe read-only commands — "
+            "use these facts when choosing ifaces/targets; skip redundant identical "
+            "list commands unless a later step needs a refresh):\n"
+            f"{prek.get('text')}\n"
+        )
+
     prompt = (
         "Prepare an authorized **Kali Linux** pentest-lab script that gathers facts THEN asks the user.\n"
         "Commands must be Kali-compatible bash one-liners (nmap, ip, iwconfig, msfconsole,\n"
@@ -675,15 +1077,23 @@ def plan_script_from_text(
         "Rules:\n"
         "- Prefer mid-run questions (type=ui) AFTER discovery commands, not a big form at start.\n"
         "- Use {{placeholders}} in later run steps; the UI will pause when they are still missing.\n"
-        "- After discovery output the runner may call AI again to build dropdown options.\n"
-        "- **Ethernet must stay up for HatsOff/internet.** Never run: `airmon-ng check kill`, "
-        "`systemctl stop NetworkManager`, `service network-manager stop`, or kill NM/wpa globally.\n"
+        "- After discovery output the runner reads stdout AND log files (airodump CSV, nmap -o*, …),\n"
+        "  then AI extracts answers (iface/BSSID/ESSID/…) or asks with options taken from those logs.\n"
+        "- **AUTO-RUN ONLY — keep Ethernet/internet up** while HatsOff collects data.\n"
+        "  Do NOT put these in the auto-run `steps` list:\n"
+        "  `airmon-ng check kill`, `airmon-ng start`, `systemctl stop NetworkManager`,\n"
+        "  `service network-manager stop`, `nmcli networking off`, `rfkill block all`,\n"
+        "  `ip link set eth*/enp* down`, killall NetworkManager/wpa_supplicant.\n"
+        "  Prefer wifi-only monitor mode so auto-run can finish and show results.\n"
+        "  (You may still *mention* those commands in notes for the operator to run "
+        "manually — just do not include them as type=run auto steps.)\n"
         "- For monitor mode: ONLY the chosen wireless iface. Prefer:\n"
         "  `nmcli device set <wlan> managed no` + `iw dev <wlan> set type monitor` "
-        "(or equivalent). Do NOT use airmon-ng check kill. Avoid `airmon-ng start` unless "
-        "the user insists (it often kills networking).\n"
+        "(or equivalent). Prefer that over airmon-ng for auto-run.\n"
         "- Never choose eth*/enp*/wired for monitor mode. Options should be wlan*/wlp*/wl* only "
         "for Wi‑Fi tasks.\n"
+        "- If LAB PRE-KNOWLEDGE is present, tailor commands to those real interfaces/IPs "
+        "and prefer wifi adapters listed there for wireless work.\n"
         "- Long-running captures (`airodump-ng`, `tcpdump`, …) MUST be wrapped as:\n"
         "  `sudo timeout -s INT -k 5 30 <cmd>` (30–45s is enough for a lab survey).\n"
         "  Exit code 124 from timeout is expected success — do not add a follow-up that "
@@ -693,7 +1103,8 @@ def plan_script_from_text(
         "- For values that cannot be shell commands (choose iface, pick host, password), "
         "use type=ui — those run in the HatsOff UI, not the shell.\n"
         "- Order: recon/list → ask user → exploit/action.\n"
-        "- Max 20 steps. One command per run step.\n\n"
+        "- Max 20 steps. One command per run step.\n"
+        f"{prek_block}\n"
         f"TEXT:\n{snippet}\n"
     )
     try:
@@ -701,18 +1112,32 @@ def plan_script_from_text(
         data = _extract_json_value(raw)
         if isinstance(data, list):
             steps = [s for s in (_normalize_step(x) for x in data) if s]
-            return {"inputs": [], "steps": steps, "summary": "Ordered command list"}
+            steps, blocked = sanitize_plan_steps(steps)
+            return {
+                "inputs": [],
+                "steps": steps,
+                "summary": "Ordered command list",
+                "preknowledge": prek,
+                "blocked_steps": blocked,
+            }
         if not isinstance(data, dict):
             raise ValueError("Unexpected plan type")
         steps = [s for s in (_normalize_step(x) for x in (data.get("steps") or [])) if s]
+        steps, blocked = sanitize_plan_steps(steps)
         return {
             "inputs": [],
             "steps": steps,
             "summary": str(data.get("summary") or "").strip(),
+            "preknowledge": prek,
+            "blocked_steps": blocked,
         }
     except Exception:
         plan = _fallback_plan(snippet)
         plan["inputs"] = []
+        steps, blocked = sanitize_plan_steps(plan.get("steps") or [])
+        plan["steps"] = steps
+        plan["preknowledge"] = prek
+        plan["blocked_steps"] = blocked
         return plan
 
 
@@ -771,6 +1196,30 @@ def run_script_stream(
       (keeps working when Ethernet stays up while a Wi‑Fi iface is in monitor mode)
     """
     known = {str(k): str(v) for k, v in (values or {}).items()}
+    # Never execute internet-killing steps even if the model slipped them in
+    steps, blocked_upfront = sanitize_plan_steps(
+        [
+            {
+                "cmd": s.get("cmd") or "",
+                "note": s.get("note") or "",
+                "ask": s.get("ask") or "",
+                "type": s.get("type") or "run",
+                "input_id": s.get("input_id") or "",
+                "options": s.get("options") or [],
+                "cleanup": s.get("cleanup") or "",
+            }
+            for s in steps
+        ]
+    )
+    if blocked_upfront:
+        yield {
+            "type": "blocked_steps",
+            "steps": blocked_upfront,
+            "message": (
+                f"Auto-run skipped {len(blocked_upfront)} step(s) that would "
+                "disconnect internet (manual Run still allowed)."
+            ),
+        }
     rendered_plan = apply_inputs_to_steps(
         [
             {
@@ -880,6 +1329,28 @@ def run_script_stream(
             break
         _log(f"step {idx + 1}/{len(steps)} starting…")
         result = run_command(cmd, cwd=cwd, timeout=timeout)
+        auto = result.get("auto_install") or {}
+        if auto.get("attempted"):
+            pkgs = ", ".join(auto.get("attempted") or [])
+            status = "OK" if auto.get("ok") else "failed"
+            yield {
+                "type": "step_progress",
+                "index": idx,
+                "message": f"Auto-installed packages as root ({status}): {pkgs}",
+            }
+        # Pull on-disk logs (airodump CSV, nmap -oN, …) so UI + AI can read them
+        file_logs = ""
+        if result.get("ok") and (
+            _OUTPUT_PATH_RE.search(cmd) or re.search(r"(?i)airodump-ng|nmap\s+.*-o", cmd)
+        ):
+            yield {
+                "type": "step_progress",
+                "index": idx,
+                "message": "Reading command log files…",
+            }
+            file_logs = collect_command_logs(cmd)
+            if file_logs:
+                result = {**result, "log_files": file_logs}
         yield {"type": "step_done", "index": idx, **result}
         if result.get("ok"):
             cleanup_cmd = apply_inputs(step.get("cleanup") or "", known)
@@ -897,7 +1368,7 @@ def run_script_stream(
             yield {"type": "stopped", "index": idx, "reason": "command failed"}
             break
 
-        # After discovery output, optionally ask the user (iface etc.)
+        # After discovery: read stdout + on-disk logs, extract answers, ask only if needed
         if (
             analyze_output
             and pause_on_ask
@@ -905,15 +1376,31 @@ def run_script_stream(
             and result.get("ok")
             and idx + 1 < len(steps)
         ):
-            combined = ((result.get("stdout") or "") + "\n" + (result.get("stderr") or "")).strip()
-            if combined:
+            combined = build_analysis_log(
+                cmd,
+                stdout=result.get("stdout") or "",
+                stderr=result.get("stderr") or "",
+                artifacts=file_logs or result.get("log_files") or None,
+            )
+            looks_discovery = bool(_DISCOVERY_CMD_RE.search(cmd))
+            has_files = bool(file_logs) or "=== LOG FILES" in combined
+            if combined or looks_discovery:
+                if not combined:
+                    combined = (
+                        "(no stdout/stderr and no log files found — "
+                        "still check if a choice is needed from remaining steps)"
+                    )
+                msg = (
+                    "AI is reading command logs for the next answer…"
+                    if has_files
+                    else "AI is reading output for the next choice…"
+                )
                 yield {
                     "type": "step_progress",
                     "index": idx,
-                    "message": "AI is reading output for the next choice…",
+                    "message": msg,
                 }
-                _log(f"AI analyze after step {idx + 1} (keepalive while waiting)…")
-                # Run AI off-thread and keepalive the SSE so webview doesn't drop
+                _log(f"AI analyze after step {idx + 1} (log chars={len(combined)})…")
                 out_q: "queue.Queue[Tuple[str, Any]]" = queue.Queue()
 
                 def _analyze():
@@ -945,7 +1432,7 @@ def run_script_stream(
                         yield {
                             "type": "step_progress",
                             "index": idx,
-                            "message": "AI is reading output for the next choice…",
+                            "message": msg,
                             "heartbeat": True,
                             "tick": tick,
                         }
@@ -959,9 +1446,34 @@ def run_script_stream(
                         "message": f"AI analyze skipped: {payload}",
                         "clear": False,
                     }
-                    suggestion = None
+                    analysis = None
                 else:
-                    suggestion = payload
+                    analysis = payload
+
+                if isinstance(analysis, dict):
+                    extracted = analysis.get("extracted_values") or {}
+                    if isinstance(extracted, dict) and extracted:
+                        known.update({str(k): str(v) for k, v in extracted.items()})
+                        bits = ", ".join(f"{k}={v}" for k, v in extracted.items())
+                        finding = analysis.get("finding") or ""
+                        note = f"From logs: {bits}"
+                        if finding:
+                            note = f"{finding} · {bits}"
+                        _log(f"AI extracted from logs: {bits}")
+                        yield {
+                            "type": "values_from_logs",
+                            "index": idx,
+                            "values": extracted,
+                            "finding": finding,
+                            "message": note,
+                        }
+                        yield {
+                            "type": "step_progress",
+                            "index": idx,
+                            "message": note,
+                            "clear": False,
+                        }
+                    suggestion = analysis.get("ask") if analysis.get("need_input") else None
                     if suggestion:
                         _log(
                             f"AI ask → id={suggestion.get('id')} "
@@ -983,7 +1495,8 @@ def run_script_stream(
                             "values": known,
                         }
                         return
-                    _log("AI analyze → no input needed")
+                    if not extracted:
+                        _log("AI analyze → no values extracted, no input needed")
                 yield {
                     "type": "step_progress",
                     "index": idx,

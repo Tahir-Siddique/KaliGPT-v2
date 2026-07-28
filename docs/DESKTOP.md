@@ -10,7 +10,18 @@ Local ChatGPT-style UI for Kali Linux labs: multi-provider AI chat, and a comman
 
 ## Install
 
-### Recommended (`./install`)
+### Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+hatsoff
+hatsoff --browser
+.\install.ps1 -Update
+```
+
+Uses Edge WebView2 for the desktop window. Lab **Run** uses any installed WSL distro (Kali preferred). If WSL/Kali is missing, HatsOff starts an elevated install (UAC). Missing tools are auto-installed with `apt-get` as root inside WSL, then the command is retried.
+
+### Kali Linux (`./install`)
 
 ```bash
 chmod +x ./install
@@ -23,7 +34,7 @@ hatsoff              # later launches
 The installer creates `~/.local/bin/hatsoff` and a desktop menu entry.  
 If an old `.venv` was created **without** `--system-site-packages`, `./install` recreates it so GTK/`gi` works for the native window.
 
-### Manual
+### Manual (Kali)
 
 ```bash
 cd ~/Desktop/KaliGPT
@@ -87,7 +98,7 @@ After the first successful turn in a new chat, HatsOff asks the model for a shor
 On fenced code blocks: **Run** + **Copy**.
 
 - Confirms before executing
-- Uses Kali-compatible shell resolution (`bash -lc` on Kali; WSL Kali on Windows when available)
+- Uses Kali-compatible shell resolution (`bash -lc` on Kali; any WSL distro on Windows, Kali preferred; missing packages auto-installed as root)
 - Shows stdout/stderr under the block
 
 ### Run script (AI ordered)
@@ -105,7 +116,7 @@ Non-shell choices use UI steps — they never hit the shell.
 
 ### Keep Ethernet up (monitor mode)
 
-HatsOff plans must **not** run `airmon-ng check kill` or stop NetworkManager — those disable **all** NM-managed NICs, including eth.
+HatsOff **auto-run** (Run script / agent data collection) will not execute `airmon-ng check kill`, stop NetworkManager, or other commands that drop the uplink — so results can still be returned. **Manual Run** on a code block is unrestricted; the operator can run those commands themselves if they choose.
 
 Preferred pattern (wifi only):
 
@@ -180,7 +191,7 @@ Prefer Gemini/Ollama/OpenRouter on Kali if Cursor’s local bridge is unavailabl
 | `No module named 'gi'` | Install GTK packages; recreate venv with `--system-site-packages` |
 | Opens browser only | OK — use `--browser`, or fix GTK as above |
 | Cursor daemon exited | Install `cursor-sdk`; check daemon log in the error; or switch provider |
-| Commands fail on Windows host | Use Kali VM/WSL; runner prefers Kali bash when detected |
+| Commands fail on Windows host | Needs WSL; HatsOff auto-starts Kali/WSL install (UAC) and apt-installs missing tools as root |
 | Empty config / missing keys | Copy `api.config.example.json` → `api.config.json`, or use Settings |
 
 ## Architecture (short)

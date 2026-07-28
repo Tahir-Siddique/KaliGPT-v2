@@ -59,6 +59,9 @@ env/
 .env/
 .python-version
 
+# --- Generated launchers ---
+/hatsoff.cmd
+
 # --- IDEs & editors ---
 .idea/
 .vscode/

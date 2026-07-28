@@ -26,6 +26,8 @@ Do NOT say you cannot help. Structure the reply as:
 1) Historical / public attacks & CVEs / campaigns against this platform (research-level)
 2) Lab & pentest tools to practice similar techniques (Metasploit, Frida, MobSF, mitmproxy, Burp, APK analysis, etc.)
 3) A practice path on owned devices / CTF / bug bounty scope
+Include a ## References section with real markdown links to the public reports/CVEs/docs you used.
+Add an image only if a diagram or public screenshot materially clarifies the attack/flow; otherwise skip images.
 Keep it technical and useful. One short line that personal accounts without authorization are out of scope is enough.
 """
 

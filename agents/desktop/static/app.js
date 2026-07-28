@@ -136,6 +136,48 @@
     }
   }
 
+  function enhanceAssistantMedia(container) {
+    if (!container) return;
+    container.querySelectorAll("a[href]").forEach((a) => {
+      const href = a.getAttribute("href") || "";
+      if (/^https?:\/\//i.test(href)) {
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer");
+        a.classList.add("msg-ext-link");
+      }
+    });
+    container.querySelectorAll("img").forEach((img) => {
+      if (img.closest(".msg-figure")) return;
+      const src = img.getAttribute("src") || "";
+      if (!/^https?:\/\//i.test(src) && !src.startsWith("/static/")) {
+        img.remove();
+        return;
+      }
+      img.setAttribute("loading", "lazy");
+      img.setAttribute("referrerpolicy", "no-referrer");
+      const fig = document.createElement("figure");
+      fig.className = "msg-figure";
+      const caption = (img.getAttribute("alt") || "").trim();
+      img.parentNode.insertBefore(fig, img);
+      fig.appendChild(img);
+      if (caption) {
+        const cap = document.createElement("figcaption");
+        cap.textContent = caption;
+        fig.appendChild(cap);
+      }
+    });
+    // Mark References heading block for styling
+    container.querySelectorAll("h2, h3").forEach((h) => {
+      if (/^\s*references\s*$/i.test(h.textContent || "")) {
+        h.classList.add("msg-refs-heading");
+        let n = h.nextElementSibling;
+        while (n && !/^H[1-6]$/i.test(n.tagName)) {
+          if (n.tagName === "UL" || n.tagName === "OL") n.classList.add("msg-refs-list");
+          n = n.nextElementSibling;
+        }
+      }
+    });
+  }
   async function copyText(text) {
     const value = String(text || "");
     try {
@@ -782,6 +824,10 @@
               const bits = [];
               if (payload.stdout) bits.push(payload.stdout);
               if (payload.stderr) bits.push(payload.stderr);
+              if (payload.log_files) {
+                bits.push("--- log files ---");
+                bits.push(payload.log_files);
+              }
               bits.push(
                 payload.timed_out
                   ? "[timed out]"
@@ -789,6 +835,21 @@
               );
               pre.hidden = false;
               pre.textContent = bits.join("\n");
+            } else if (payload.type === "values_from_logs") {
+              ensureList(steps);
+              const li = listEl.querySelector(`li[data-index="${payload.index}"]`);
+              if (li) {
+                setStepActivity(li, payload.message || "Values taken from logs");
+              }
+              setStatus(payload.message || "Identified answers from command logs");
+              if (payload.values && typeof payload.values === "object") {
+                Object.assign(known, payload.values);
+              }
+            } else if (payload.type === "blocked_steps") {
+              setStatus(
+                payload.message ||
+                  `Auto-run skipped ${(payload.steps || []).length} internet-risk step(s) — use manual Run if needed.`
+              );
             } else if (payload.type === "cleanup_registered") {
               setStatus(`Will auto-revert later: ${payload.description || "lab change"}`);
             } else if (payload.type === "need_input") {
@@ -883,13 +944,13 @@
       loader.className = "plan-loader";
       loader.setAttribute("role", "status");
       loader.setAttribute("aria-live", "polite");
-      loader.innerHTML = `<span class="plan-loader-spinner" aria-hidden="true"></span><span class="plan-loader-text">Building command plan…</span>`;
+      loader.innerHTML = `<span class="plan-loader-spinner" aria-hidden="true"></span><span class="plan-loader-text">Gathering lab facts, then building plan…</span>`;
       actions.appendChild(loader);
     }
     btn.disabled = true;
     if (loader) loader.hidden = false;
     panelEl.hidden = false;
-    panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">AI is building the command plan…</span></div>`;
+    panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">Gathering lab pre-knowledge (safe recon)…</span></div>`;
     try {
       let plan = null;
       let lastErr = null;
@@ -922,7 +983,12 @@
       const steps = plan.steps || [];
       if (!steps.length) throw new Error("No steps in plan");
       if (loader) loader.hidden = true;
-      panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">Starting ${steps.length} steps…</span></div>`;
+      const blockedN = (plan.blocked_steps || []).length;
+      const prekOk = plan.preknowledge && plan.preknowledge.ok;
+      let startMsg = `Starting ${steps.length} steps`;
+      if (prekOk) startMsg += " (using lab pre-knowledge)";
+      if (blockedN) startMsg += ` — auto-run skipped ${blockedN} internet-risk step(s)`;
+      panelEl.innerHTML = `<div class="script-status"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">${escapeHtml(startMsg)}…</span></div>`;
       await streamScriptSteps(steps, {}, panelEl);
     } catch (err) {
       panelEl.innerHTML = `<div class="script-status failed"><span class="script-status-dot" aria-hidden="true"></span><span class="script-status-text">Error: ${escapeHtml(err.message)}</span></div>`;
@@ -930,7 +996,7 @@
       btn.disabled = false;
       if (loader) {
         loader.hidden = true;
-        loader.innerHTML = `<span class="plan-loader-spinner" aria-hidden="true"></span><span class="plan-loader-text">Building command plan…</span>`;
+        loader.innerHTML = `<span class="plan-loader-spinner" aria-hidden="true"></span><span class="plan-loader-text">Gathering lab facts, then building plan…</span>`;
       }
     }
   }
@@ -957,6 +1023,7 @@
       body.classList.add("md");
       body.innerHTML = renderMarkdown(content);
       enhanceCodeBlocks(body);
+      enhanceAssistantMedia(body);
       const hasCode = body.querySelectorAll("pre").length > 0;
       if (hasCode) {
         actions.hidden = false;
@@ -1068,6 +1135,7 @@
     bodyEl.classList.add("md");
     bodyEl.innerHTML = renderMarkdown(finalText || "");
     enhanceCodeBlocks(bodyEl);
+    enhanceAssistantMedia(bodyEl);
     if (actions && scriptPanel) {
       actions.hidden = true;
       actions.innerHTML = "";
@@ -1305,13 +1373,44 @@
 
   async function loadEnvironment() {
     try {
-      const env = await api("/api/environment");
+      let env = await api("/api/environment");
       const label = document.getElementById("env-label");
       if (!label) return;
-      if (env.is_kali) {
+
+      // Windows without WSL: auto-start elevated Kali/WSL install once
+      if (
+        env.system === "windows" &&
+        !env.lab_ready &&
+        !sessionStorage.getItem("hatsoff_wsl_ensure_started")
+      ) {
+        sessionStorage.setItem("hatsoff_wsl_ensure_started", "1");
+        label.textContent = "Installing WSL lab… · Settings";
+        try {
+          const ensured = await api("/api/environment/ensure", {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          env = ensured.environment || env;
+          if (!env.lab_ready) {
+            label.textContent = "Approve UAC for WSL · Settings";
+            return;
+          }
+        } catch (_e) {
+          label.textContent = "WSL setup needed · Settings";
+          return;
+        }
+      }
+
+      if (env.mode === "kali-wsl") {
+        label.textContent = "Kali (WSL) · Settings";
+      } else if (env.mode === "wsl-linux") {
+        label.textContent = `${env.shell_label || "WSL"} · Settings`;
+      } else if (env.is_kali) {
         label.textContent = `${env.shell_label} · Settings`;
+      } else if (env.system === "windows" && env.lab_ready) {
+        label.textContent = `${env.shell_label || "WSL"} · Settings`;
       } else if (env.mode === "windows") {
-        label.textContent = "Use Kali VM/WSL for Run · Settings";
+        label.textContent = "Windows (no WSL) · Settings";
       } else {
         label.textContent = `${env.shell_label || "Linux"} · Settings`;
       }

@@ -60,7 +60,7 @@ def main(argv=None):
         except OSError:
             time.sleep(0.05)
 
-    print(f"㉿ HatsOff desktop → {url}")
+    print(f"[HatsOff] desktop -> {url}")
     print(f"   Chat store: {store.db_path}")
 
     if args.no_window:
@@ -76,8 +76,9 @@ def main(argv=None):
         try:
             import webview
 
+            title = "HatsOff · Windows" if sys.platform.startswith("win") else "HatsOff · Kali"
             window = webview.create_window(
-                "HatsOff · Kali",
+                title,
                 url,
                 width=1280,
                 height=860,
@@ -92,7 +93,16 @@ def main(argv=None):
                 except Exception:
                     pass
 
-            webview.start(_ensure_maximized)
+            # Prefer Edge WebView2 on Windows; fall back to default backend if needed
+            started = False
+            if sys.platform.startswith("win"):
+                try:
+                    webview.start(_ensure_maximized, gui="edgechromium")
+                    started = True
+                except Exception:
+                    started = False
+            if not started:
+                webview.start(_ensure_maximized)
             session_cleanup.run_pending(reason="window_closed")
             return 0
         except Exception as exc:
@@ -109,6 +119,18 @@ def main(argv=None):
                     "      pip install -r requirements/pip-requirements.txt\n"
                     "      python -m agents.desktop\n"
                     "\n    Or keep using the browser (already opening):\n"
+                    "      python -m agents.desktop --browser\n"
+                )
+            elif sys.platform.startswith("win"):
+                print(
+                    "\n    To get a real HatsOff desktop window on Windows:\n"
+                    "      1. Install Python 3 from python.org (add to PATH)\n"
+                    "      2. powershell -ExecutionPolicy Bypass -File .\\install.ps1 -NoRun\n"
+                    "      3. Ensure Edge WebView2 is installed (Win10/11 usually have it)\n"
+                    "         https://developer.microsoft.com/microsoft-edge/webview2/\n"
+                    "      4. hatsoff\n"
+                    "\n    Or keep using the browser (already opening):\n"
+                    "      hatsoff --browser\n"
                     "      python -m agents.desktop --browser\n"
                 )
 

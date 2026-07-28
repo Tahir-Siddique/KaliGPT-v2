@@ -22,12 +22,52 @@ HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: mu
 
 | Area | What you get |
 |------|----------------|
-| **Desktop UI** | ChatGPT-style local app, maximized window when pywebview works |
+| **Desktop UI** | ChatGPT-style local app (WebView2 on Windows, GTK/WebKit on Kali) |
 | **Providers** | Gemini, ChatGPT, Ollama, OpenRouter, LiteLLM, Cursor |
-| **Labs** | Run code blocks; **Run script (AI ordered)** with discover → ask → act on Kali bash |
+| **Labs** | **Run** on code blocks; **Run script (AI ordered)** with discover → ask → act |
+| **Windows lab** | Commands run in **WSL** (Kali preferred, any distro works); missing tools auto-`apt` as root |
+| **Pre-knowledge** | Safe recon (`ip`, routes, wifi) before planning so scripts match your real lab |
+| **Log-aware AI** | Reads command output **and** artifact files (e.g. airodump CSV) to fill answers |
+| **Auto-run safety** | Agent auto-run skips internet-killing steps; **manual Run** stays unrestricted |
+| **References** | Answers cite source links when using external facts; images only when useful |
 | **Inputs** | Mid-run dropdowns for interfaces/targets; UI-only ask steps |
 | **Persistence** | Chats in `~/.kaligpt/chats.db`; keys in local `api.config.json` (not committed) |
 | **CLI** | Classic KaliGPT CLI agents still available |
+
+---
+
+## Quick start (Windows)
+
+```powershell
+cd C:\path\to\KaliGPT
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+This creates `.venv`, installs deps, and adds a **`hatsoff`** command (also `.\hatsoff.cmd` in the project folder). Uses **Edge WebView2** for the desktop window.
+
+```powershell
+hatsoff
+hatsoff --browser
+.\install.ps1 -NoRun     # install only
+.\install.ps1 -Update    # git pull + refresh deps
+```
+
+**Lab Run on Windows**
+
+- Needs a **WSL** Linux distro (Kali preferred; Ubuntu etc. also work).
+- If WSL/distro is missing, HatsOff can start an elevated Kali/WSL install (UAC; reboot may be required).
+- Missing packages are installed automatically with `apt-get` as root inside WSL, then the command is retried.
+- Chat works even without WSL; lab tools need WSL.
+
+Manual:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements\pip-requirements.txt
+copy agents\utils\api.config.example.json agents\utils\api.config.json
+python -m agents.desktop
+```
 
 ---
 
@@ -138,11 +178,16 @@ PYTHONPATH=. python -u -m agents.cursor_daemon   # should print {"ok":true,"read
 ## Lab runner (desktop)
 
 1. Ask HatsOff for Kali commands / a workflow.
-2. **Run** on a code block — executes via Kali `/bin/bash` when available.
-3. **Run script (AI ordered)** — AI builds discover → ask → act steps:
-   - discovery commands run first
-   - mid-run **dropdown** for choices (iface, host, etc.)
+2. **Run** (play on a code block) — executes on Kali bash / WSL. **Manual** — you choose; no auto-run internet-kill filter.
+3. **Run script (AI ordered)** — agent **auto-run** for collecting data and showing relevant results:
+   - gathers **pre-knowledge** (safe recon) so the plan matches your ifaces/routes
+   - builds discover → ask → act steps
+   - reads stdout **and** log files (e.g. airodump CSV) to identify answers
+   - mid-run **dropdowns** when several candidates exist; auto-fills when the logs are clear
    - remaining steps use `{{placeholders}}`
+   - **skips** steps that would drop the uplink (`airmon-ng check kill`, stop NetworkManager, bring `eth*` down, etc.) so collection can finish — you can still run those yourself with **Run**
+
+Prefer wifi-only monitor mode for auto-run (`nmcli … managed no` + `iw set type monitor`) so Ethernet/internet stays up.
 
 Only run against systems you are authorized to test.
 
@@ -196,7 +241,8 @@ More: [docs/DESKTOP.md](docs/DESKTOP.md) · [DEVELOPER.md](DEVELOPER.md) · [CON
 
 - **Never commit** `agents/utils/api.config.json` (gitignored). Use the example file.
 - If a real API key was ever committed, **rotate it** in the provider dashboard.
-- Command runner executes on the host shell — review prompts before **Run**.
+- Command runner executes for real (Kali bash / WSL) — review before **Run** or **Run script**.
+- Auto-run avoids internet-killing commands; manual **Run** does not — treat it as privileged.
 
 ---
 
