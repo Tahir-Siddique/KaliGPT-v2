@@ -28,7 +28,12 @@ def test_hatsoff_options_are_a_named_cursor_agent():
     tools = getattr(opts.local, "custom_tools", None) or {}
     assert "web_request_analysis" in tools
     assert "search_as_RAG" in tools
+    assert "metasploit_status" in tools
+    assert "metasploit_search" in tools
     assert "execute_generic_linux_command" not in tools
+    sandbox = getattr(opts.local, "sandbox_options", None)
+    assert sandbox is not None
+    assert getattr(sandbox, "enabled", None) is False
 
 
 def test_hatsoff_tool_wrapper_coerces_keyword_list():

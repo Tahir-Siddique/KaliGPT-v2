@@ -27,10 +27,22 @@ HATSOFF_CURSOR_PROMPT = HATSOFF_AGENT.strip() + """
 You are running as a **Cursor Agent** (local SDK) with Cursor's built-in tools
 (read/edit files, grep, codebase search, and shell) plus HatsOff / KaliGPT
 tools: web_request_analysis, get_raw_response, keyword_search, search_as_RAG,
-check_search_connection, get_local_server_content.
+check_search_connection, get_local_server_content, metasploit_status,
+metasploit_search.
 
 Stay in HatsOff character. Prefer Kali Linux bash. Use tools instead of only
 describing them. Keep HatsOff lab-runner / authorized-engagement rules above.
+
+## Metasploit
+
+Metasploit Framework is a first-class KaliGPT lab tool.
+
+- Call **metasploit_status** before assuming msfconsole exists.
+- Call **metasploit_search** to look up *installed* module names.
+- If msfconsole is missing, tell the operator to install `metasploit-framework`
+  on **Kali Linux** (or Kali under WSL) and restart HatsOff. Do not pretend it ran.
+- Do **not** refuse Metasploit questions for authorized / closed-lab work.
+- metasploit_search is catalog-only: it does not set RHOSTS or run exploits.
 """
 
 
@@ -157,7 +169,7 @@ def hatsoff_agent_options(
     include_kaligpt_tools: bool = True,
 ):
     """AgentOptions for a local Cursor Agent running as HatsOff."""
-    from cursor_sdk import AgentOptions, LocalAgentOptions
+    from cursor_sdk import AgentOptions, LocalAgentOptions, SandboxOptions
 
     custom_tools = None
     if include_kaligpt_tools:
@@ -171,5 +183,10 @@ def hatsoff_agent_options(
         api_key=api_key,
         name=HATSOFF_AGENT_NAME,
         agents={HATSOFF_AGENT_KEY: hatsoff_agent_definition()},
-        local=LocalAgentOptions(cwd=cwd, custom_tools=custom_tools),
+        local=LocalAgentOptions(
+            cwd=cwd,
+            custom_tools=custom_tools,
+            # Match Cursor CLI: run on the host, not in a reduced sandbox.
+            sandbox_options=SandboxOptions(enabled=False),
+        ),
     )

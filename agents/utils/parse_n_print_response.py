@@ -28,17 +28,22 @@ def print_banner():
     console2.print(Panel(banner_text, subtitle="( ㉿ HatsOff )", border_style="blue", padding=(1, 2)))
 
 
-def parse_n_print_response(api_response_text: str):
+def parse_n_print_response(
+    api_response_text: str,
+    *,
+    title: str = "( HatsOff Response )",
+    border_style: str = "blue",
+):
     """Robust Markdown renderer for ALL GenAI response types"""
     console = Console(width=get_console_width())
 
     # Clean excessive newlines
-    cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', api_response_text.strip())
+    cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', (api_response_text or "").strip())
 
     try:
         # Rich's Markdown handles 95% of cases perfectly
         md = Markdown(cleaned, code_theme="github-dark", inline_code_theme="github-dark")
-        console.print(Panel(md, title="( HatsOff Response )", border_style="blue", padding=(1, 2)))
+        console.print(Panel(md, title=title, border_style=border_style, padding=(1, 2)))
         return True
 
     except Exception:
