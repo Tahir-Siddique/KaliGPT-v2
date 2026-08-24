@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -228,6 +230,153 @@ def print_agent(text: str, *, agent_id: Optional[str] = None) -> None:
 
 def print_notice(message: str, *, style: str = "cyan") -> None:
     console().print(f"[{style}]{message}[/{style}]")
+
+
+def _merge_assistant(collected: str, incoming: str, *, delta: bool) -> str:
+    if not incoming:
+        return collected
+    if delta or not collected:
+        return collected + incoming
+    if incoming.startswith(collected):
+        return incoming
+    if collected.endswith(incoming):
+        return collected
+    return collected + incoming
+
+
+def _fmt_tokens(value: int) -> str:
+    return f"{int(value):,}"
+
+
+class TurnLive:
+    """Live token usage + tool/thinking/shell log while a Cursor run is in flight."""
+
+    def __init__(self, con: Optional[Console] = None):
+        self.con = con or console()
+        self.logs: list[str] = []
+        self._tool_seen: dict[str, str] = {}
+        self.thinking = ""
+        self.assistant = ""
+        self.shell = ""
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
+        self.live_tokens = 0
+        self.saw_assistant = False
+        self._live: Optional[Live] = None
+
+    def __enter__(self) -> "TurnLive":
+        self._live = Live(
+            self.view(),
+            console=self.con,
+            refresh_per_second=16,
+            vertical_overflow="visible",
+        )
+        self._live.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self._live is not None:
+            self._live.update(self.view())
+            self._live.stop()
+            self._live = None
+            if self.assistant and not self.assistant.endswith("\n"):
+                self.con.print()
+
+    def handle(self, event: dict[str, Any]) -> None:
+        kind = str(event.get("kind") or "")
+        if kind == "thinking":
+            text = str(event.get("text") or "")
+            if event.get("delta"):
+                self.thinking += text
+            else:
+                self.thinking = text or self.thinking
+        elif kind == "assistant":
+            incoming = str(event.get("text") or "")
+            if incoming:
+                self.assistant = _merge_assistant(
+                    self.assistant, incoming, delta=bool(event.get("delta"))
+                )
+                self.saw_assistant = True
+                self.thinking = ""
+        elif kind == "tool":
+            name = str(event.get("name") or "Tool")
+            detail = str(event.get("detail") or "")
+            status = str(event.get("status") or "running")
+            call_id = str(event.get("call_id") or name)
+            mark = "x" if status == "error" else ("+" if status == "completed" else ">")
+            line = f"{mark} {name}" + (f"  {detail}" if detail else "")
+            if self._tool_seen.get(call_id) != line:
+                self._tool_seen[call_id] = line
+                self.logs.append(line)
+        elif kind == "shell":
+            text = str(event.get("text") or "")
+            if text:
+                self.shell = (self.shell + text)[-1200:]
+        elif kind == "status":
+            text = str(event.get("text") or "").strip()
+            if text:
+                self.logs.append(f"· {text}")
+        elif kind == "token":
+            self.live_tokens += int(event.get("delta") or 0)
+        elif kind == "usage":
+            self.input_tokens = int(event.get("input_tokens") or self.input_tokens)
+            self.output_tokens = int(event.get("output_tokens") or self.output_tokens)
+            self.total_tokens = int(
+                event.get("total_tokens")
+                or (self.input_tokens + self.output_tokens)
+                or self.total_tokens
+            )
+            if self.total_tokens:
+                self.live_tokens = max(self.live_tokens, self.total_tokens)
+        self.logs = self.logs[-16:]
+        if self._live is not None:
+            self._live.update(self.view())
+
+    def view(self) -> Any:
+        parts: list[Any] = [self._usage_line()]
+        if self.logs:
+            log = Text()
+            for line in self.logs:
+                style = "red" if line.startswith("x ") else (
+                    "green" if line.startswith("+ ") else "cyan"
+                )
+                if line.startswith("· "):
+                    style = "grey50"
+                log.append(line + "\n", style=style)
+            parts.append(log)
+        if self.shell:
+            parts.append(Text(self.shell[-400:], style="grey50"))
+        if self.thinking and not self.assistant:
+            snippet = self.thinking[-280:].replace("\n", " ")
+            parts.append(Text(snippet, style="italic grey50"))
+        if self.assistant:
+            parts.append(Markdown(self.assistant))
+        return Group(*parts)
+
+    def _usage_line(self) -> Text:
+        inn = self.input_tokens
+        out = self.output_tokens
+        total = self.total_tokens or self.live_tokens
+        line = Text()
+        if inn or out or total:
+            line.append("tokens  ", style="grey50")
+            if inn or out:
+                line.append(_fmt_tokens(inn), style="bold white")
+                line.append(" in  ", style="grey50")
+                line.append(_fmt_tokens(out), style="bold white")
+                line.append(" out", style="grey50")
+                if total:
+                    line.append("  ·  ", style="grey50")
+                    line.append(_fmt_tokens(total), style="bold cyan")
+                    line.append(" total", style="grey50")
+            else:
+                line.append(_fmt_tokens(total), style="bold cyan")
+                line.append(" streamed", style="grey50")
+        else:
+            line.append("working…  ", style="bold cyan")
+            line.append("waiting for tools / tokens", style="grey50")
+        return line
 
 
 def history_path() -> Path:

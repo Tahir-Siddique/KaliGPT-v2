@@ -17,11 +17,11 @@ from typing import Any, Dict, Optional
 
 # Reuse Windows select() pipe fix
 from agents.cursor_worker import (
-    _complete_run,
     _hatsoff_options,
     _patch_windows_bridge_discovery,
     _prefixed_prompt,
     _run_failed,
+    drive_run,
 )
 
 _AGENTS: Dict[str, Any] = {}
@@ -31,10 +31,18 @@ def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
+def _emit_progress(event: dict) -> None:
+    print(json.dumps(event, ensure_ascii=False, default=str), flush=True)
+
+
 def _send(agent, prompt: str, model: str):
     from cursor_sdk import SendOptions
 
-    return _complete_run(agent.send(prompt, SendOptions(model=model)))
+    text, status, usage = drive_run(
+        agent.send(prompt, SendOptions(model=model)),
+        emit=_emit_progress,
+    )
+    return text, status, usage
 
 
 def handle_turn(payload: dict) -> dict:
@@ -58,9 +66,12 @@ def handle_turn(payload: dict) -> dict:
     try:
         # Hot path: agent already open in this daemon
         if agent_id and agent_id in _AGENTS:
-            text, status = _send(_AGENTS[agent_id], prefixed, model)
+            text, status, usage = _send(_AGENTS[agent_id], prefixed, model)
             if not _run_failed(status, text):
-                return {"ok": True, "text": text, "agent_id": agent_id}
+                result = {"ok": True, "text": text, "agent_id": agent_id}
+                if usage:
+                    result["usage"] = usage
+                return result
             _log(f"run error for cached agent {agent_id}; evicting and retrying fresh")
             try:
                 _AGENTS[agent_id].close()
@@ -73,10 +84,13 @@ def handle_turn(payload: dict) -> dict:
         if agent_id:
             try:
                 agent = Agent.resume(agent_id, opts)
-                text, status = _send(agent, prefixed, model)
+                text, status, usage = _send(agent, prefixed, model)
                 if not _run_failed(status, text):
                     _AGENTS[agent_id] = agent
-                    return {"ok": True, "text": text, "agent_id": agent_id}
+                    result = {"ok": True, "text": text, "agent_id": agent_id}
+                    if usage:
+                        result["usage"] = usage
+                    return result
                 _log(f"run error after resume for {agent_id}; creating a new agent")
                 try:
                     agent.close()
@@ -96,7 +110,7 @@ def handle_turn(payload: dict) -> dict:
             agent.close()
             return {"ok": False, "error": "Cursor did not return an agent_id", "agent_id": None}
         fresh = _prefixed_prompt(prompt, agent_id=None, system_prompt=system_prompt)
-        text, status = _send(agent, fresh, model)
+        text, status, usage = _send(agent, fresh, model)
         if _run_failed(status, text):
             try:
                 agent.close()
@@ -104,7 +118,10 @@ def handle_turn(payload: dict) -> dict:
                 pass
             return {"ok": False, "error": text, "agent_id": new_id}
         _AGENTS[new_id] = agent
-        return {"ok": True, "text": text, "agent_id": new_id}
+        result = {"ok": True, "text": text, "agent_id": new_id}
+        if usage:
+            result["usage"] = usage
+        return result
 
     except CursorAgentError as err:
         retryable = getattr(err, "is_retryable", False)

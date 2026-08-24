@@ -14,7 +14,7 @@ import os
 import sys
 import threading
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Optional
 
 
 def _patch_windows_bridge_discovery() -> None:
@@ -98,6 +98,24 @@ def _complete_run(run):
     return str(text or ""), status
 
 
+def drive_run(
+    run,
+    emit: Optional[Callable[[dict], None]] = None,
+) -> tuple[str, Any, Optional[dict]]:
+    """Emit live progress from run.events(), then wait() for the terminal result."""
+    from .cursor_progress import iter_progress, usage_as_dict
+
+    if emit is not None:
+        for item in iter_progress(run):
+            emit(item)
+    text, status = _complete_run(run)
+    usage = usage_as_dict(getattr(run, "usage", None))
+    if usage is None:
+        result = getattr(run, "_terminal_result", None)
+        usage = usage_as_dict(getattr(result, "usage", None))
+    return text, status, usage
+
+
 def _run_failed(status: str | None, text: str) -> bool:
     return status == "error" or str(text or "").startswith("Run failed:")
 
@@ -119,7 +137,10 @@ def _hatsoff_options(api_key: str, model: str, cwd: str, *, include_tools: bool 
     )
 
 
-def run_turn(payload: dict) -> dict:
+def run_turn(
+    payload: dict,
+    emit: Optional[Callable[[dict], None]] = None,
+) -> dict:
     _patch_windows_bridge_discovery()
 
     from cursor_sdk import Agent, CursorAgentError, SendOptions
@@ -138,13 +159,26 @@ def run_turn(payload: dict) -> dict:
     send_opts = SendOptions(model=model)
     opts = _hatsoff_options(api_key, model, cwd)
 
+    def finish(text: str, status: Any, agent_id_out: Any, usage: Optional[dict]) -> dict:
+        payload_out: dict[str, Any] = {"text": text, "agent_id": agent_id_out}
+        if usage:
+            payload_out["usage"] = usage
+        if _run_failed(status, text):
+            payload_out["ok"] = False
+            payload_out["error"] = text
+            return payload_out
+        payload_out["ok"] = True
+        return payload_out
+
     try:
         if agent_id:
             try:
                 with Agent.resume(agent_id, opts) as agent:
-                    text, status = _complete_run(agent.send(prefixed, send_opts))
+                    text, status, usage = drive_run(
+                        agent.send(prefixed, send_opts), emit=emit
+                    )
                     if not _run_failed(status, text):
-                        return {"ok": True, "text": text, "agent_id": agent_id}
+                        return finish(text, status, agent_id, usage)
             except CursorAgentError:
                 pass
 
@@ -157,10 +191,8 @@ def run_turn(payload: dict) -> dict:
         with agent_cm as agent:
             new_id = getattr(agent, "agent_id", None) or getattr(agent, "agentId", None)
             fresh = _prefixed_prompt(prompt, agent_id=None, system_prompt=system_prompt)
-            text, status = _complete_run(agent.send(fresh, send_opts))
-            if _run_failed(status, text):
-                return {"ok": False, "error": text, "agent_id": new_id}
-            return {"ok": True, "text": text, "agent_id": new_id}
+            text, status, usage = drive_run(agent.send(fresh, send_opts), emit=emit)
+            return finish(text, status, new_id, usage)
     except CursorAgentError as err:
         retryable = getattr(err, "is_retryable", False)
         msg = getattr(err, "message", str(err))

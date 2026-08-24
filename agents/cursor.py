@@ -13,7 +13,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import IO, Deque, Optional, Tuple
+from typing import IO, Callable, Deque, Optional, Tuple
 
 from .utils.agent_configs import get_api_key, get_ai_specific_default_model
 from .hatsoff_cursor import HATSOFF_CURSOR_PROMPT as SYSTEM_PROMPT
@@ -204,6 +204,41 @@ def _ensure_daemon() -> subprocess.Popen:
         return _daemon_proc
 
 
+def _read_turn_response(
+    stream: IO[str],
+    *,
+    timeout: float = 900.0,
+    on_progress: Optional[Callable[[dict], None]] = None,
+) -> dict:
+    deadline = time.monotonic() + timeout
+    remaining = timeout
+    while remaining > 0:
+        data = _read_json_line(stream, timeout=remaining)
+        remaining = deadline - time.monotonic()
+        if data.get("type") == "progress":
+            if on_progress:
+                on_progress(data)
+            continue
+        return data
+    raise TimeoutError(
+        "Timed out waiting for Cursor daemon response.\n" + (_daemon_stderr_tail() or "")
+    )
+
+
+def _finish_turn(
+    data: dict,
+    *,
+    agent_id: Optional[str],
+    on_progress: Optional[Callable[[dict], None]] = None,
+) -> Tuple[str, Optional[str]]:
+    usage = data.get("usage")
+    if on_progress and isinstance(usage, dict):
+        on_progress({"type": "progress", "kind": "usage", **usage})
+    if data.get("ok"):
+        return (str(data.get("text") or ""), data.get("agent_id") or agent_id)
+    return (str(data.get("error") or "Cursor error"), data.get("agent_id") or agent_id)
+
+
 def _ask_via_daemon(
     prompt: str,
     *,
@@ -211,6 +246,7 @@ def _ask_via_daemon(
     agent_id: Optional[str],
     cwd: Optional[str],
     api_key: str,
+    on_progress: Optional[Callable[[dict], None]] = None,
 ) -> Tuple[str, Optional[str]]:
     proc = _ensure_daemon()
     assert proc.stdin is not None and proc.stdout is not None
@@ -226,22 +262,23 @@ def _ask_via_daemon(
     }
     proc.stdin.write(json.dumps(payload) + "\n")
     proc.stdin.flush()
-    data = _read_json_line(proc.stdout, timeout=900.0)
+    data = _read_turn_response(
+        proc.stdout, timeout=900.0, on_progress=on_progress
+    )
 
     if data.get("ok"):
-        return (str(data.get("text") or ""), data.get("agent_id") or agent_id)
+        return _finish_turn(data, agent_id=agent_id, on_progress=on_progress)
     err = str(data.get("error") or "Cursor error")
-    if err.startswith("Run failed:"):
-        # Stale session — retry once without agent_id so a fresh agent is created.
-        if agent_id:
-            return _ask_via_daemon(
-                prompt,
-                model=model,
-                agent_id=None,
-                cwd=cwd,
-                api_key=api_key,
-            )
-    return (err, data.get("agent_id") or agent_id)
+    if err.startswith("Run failed:") and agent_id:
+        return _ask_via_daemon(
+            prompt,
+            model=model,
+            agent_id=None,
+            cwd=cwd,
+            api_key=api_key,
+            on_progress=on_progress,
+        )
+    return _finish_turn(data, agent_id=agent_id, on_progress=on_progress)
 
 
 def ask_inprocess(
@@ -251,6 +288,7 @@ def ask_inprocess(
     agent_id: Optional[str] = None,
     cwd: Optional[str] = None,
     api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[dict], None]] = None,
 ) -> Tuple[str, Optional[str]]:
     """Direct in-process SDK call (tests / explicit override)."""
     from .cursor_worker import run_turn
@@ -267,15 +305,15 @@ def ask_inprocess(
         "agent_id": agent_id,
         "system_prompt": SYSTEM_PROMPT,
     }
-    result = run_turn(payload)
+    result = run_turn(payload, emit=on_progress)
     if result.get("ok"):
-        return (str(result.get("text") or ""), result.get("agent_id"))
+        return _finish_turn(result, agent_id=None, on_progress=on_progress)
     err = str(result.get("error") or "Cursor error")
     if err.startswith("Run failed:") and agent_id:
-        result = run_turn({**payload, "agent_id": None})
+        result = run_turn({**payload, "agent_id": None}, emit=on_progress)
         if result.get("ok"):
-            return (str(result.get("text") or ""), result.get("agent_id"))
-    return (err, result.get("agent_id") or agent_id)
+            return _finish_turn(result, agent_id=None, on_progress=on_progress)
+    return _finish_turn(result, agent_id=agent_id, on_progress=on_progress)
 
 
 def ask(
@@ -285,6 +323,7 @@ def ask(
     agent_id: Optional[str] = None,
     cwd: Optional[str] = None,
     api_key: Optional[str] = None,
+    on_progress: Optional[Callable[[dict], None]] = None,
 ) -> Tuple[str, Optional[str]]:
     """
     Send one turn to a local Cursor agent via the long-lived daemon.
@@ -306,6 +345,7 @@ def ask(
                     agent_id=agent_id,
                     cwd=cwd,
                     api_key=key,
+                    on_progress=on_progress,
                 )
             return _ask_via_daemon(
                 prompt,
@@ -313,6 +353,7 @@ def ask(
                 agent_id=agent_id,
                 cwd=cwd,
                 api_key=key,
+                on_progress=on_progress,
             )
         except Exception as exc:
             # One retry after resetting a dead daemon
@@ -333,6 +374,7 @@ def ask(
                         agent_id=None,
                         cwd=cwd,
                         api_key=key,
+                        on_progress=on_progress,
                     )
                 except Exception as exc2:
                     return (f"Cursor error: {exc2}", None)
@@ -432,18 +474,27 @@ def main(prompt=None):
                 continue
 
             ui.print_user(text)
-            with ui.console().status(
-                "[bold cyan]Cursor Agent working…[/bold cyan]",
-                spinner="dots",
-            ):
+            live = ui.TurnLive(ui.console())
+            with live:
                 response, agent_id = ask(
                     text,
                     model=model,
                     agent_id=agent_id,
                     cwd=cwd,
                     api_key=CURSOR_API_KEY,
+                    on_progress=live.handle,
                 )
-            ui.print_agent(response, agent_id=agent_id)
+                if response and not ui.is_error_reply(response):
+                    live.handle(
+                        {
+                            "type": "progress",
+                            "kind": "assistant",
+                            "text": response,
+                            "delta": False,
+                        }
+                    )
+            if ui.is_error_reply(response) or not live.saw_assistant:
+                ui.print_agent(response, agent_id=agent_id)
 
         except (KeyboardInterrupt, EOFError):
             ui.print_notice("\nExiting Cursor Agent.", style="green")
