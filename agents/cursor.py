@@ -16,7 +16,7 @@ import time
 from typing import IO, Deque, Optional, Tuple
 
 from .utils.agent_configs import get_api_key, get_ai_specific_default_model
-from .utils.prompts import HATSOFF_AGENT as SYSTEM_PROMPT
+from .hatsoff_cursor import HATSOFF_CURSOR_PROMPT as SYSTEM_PROMPT
 
 
 CURSOR_API_KEY: Optional[str] = None
@@ -28,6 +28,62 @@ _daemon_proc: Optional[subprocess.Popen] = None
 _daemon_lock = threading.Lock()
 _daemon_stderr: Deque[str] = collections.deque(maxlen=120)
 _daemon_stderr_thread: Optional[threading.Thread] = None
+
+
+def _inprocess_enabled() -> bool:
+    return os.environ.get("KALIGPT_CURSOR_INPROCESS", "").strip() in (
+        "1",
+        "true",
+        "True",
+    )
+
+
+def _print_cli_runtime() -> None:
+    """Show that this CLI is a local Cursor Agent, not a chat-only wrapper."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from .hatsoff_cursor import HATSOFF_AGENT_NAME
+    from .utils.parse_n_print_response import get_console_width, print_banner
+
+    print_banner()
+    console = Console(width=get_console_width())
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("k", style="cyan", no_wrap=True)
+    table.add_column("v")
+    table.add_row("Runtime", "Cursor SDK · local Agent (same engine as Cursor Agent)")
+    table.add_row("Name", f"{HATSOFF_AGENT_NAME} (KaliGPT / HatsOff profile)")
+    table.add_row("Model", CURSOR_MODEL or "composer-2.5")
+    table.add_row("Workspace", CURSOR_CWD or os.getcwd())
+
+    if _inprocess_enabled():
+        table.add_row(
+            "Mode",
+            "[yellow]in-process[/yellow]  (KALIGPT_CURSOR_INPROCESS is set — "
+            "this skips the long-lived Cursor daemon. Unset it for the real agent.)",
+        )
+    else:
+        try:
+            proc = _ensure_daemon()
+            table.add_row(
+                "Mode",
+                f"[green]Cursor daemon ready[/green]  pid={proc.pid}  "
+                "(multi-turn Agent.create / Agent.resume)",
+            )
+        except Exception as exc:
+            table.add_row("Mode", f"[red]Cursor daemon failed[/red]  {exc}")
+
+    table.add_row(
+        "Tools",
+        "Cursor built-in (shell, read, grep, edit) + KaliGPT "
+        "(web_request_analysis, search_as_RAG, …)",
+    )
+    table.add_row("Agent ID", "created on your first message")
+    console.print(
+        Panel(table, title="( Cursor Agent )", border_style="green", padding=(1, 2))
+    )
+    console.print("Type a message at [bold]You ➤[/bold]. Ctrl+C to exit.\n")
 
 
 def _resolve_api_key() -> Optional[str]:
@@ -271,11 +327,7 @@ def ask(
     if not key:
         return ("Error: Cursor API key not configured.", None)
 
-    use_inprocess = os.environ.get("KALIGPT_CURSOR_INPROCESS", "").strip() in (
-        "1",
-        "true",
-        "True",
-    )
+    use_inprocess = _inprocess_enabled()
 
     with _CURSOR_LOCK:
         try:
@@ -324,7 +376,7 @@ def main(prompt=None):
     from .utils.parse_n_print_response import parse_n_print_response
 
     initialize_configs()
-    print(f"㉿ HatsOff ( cursor/{CURSOR_MODEL} )")
+    _print_cli_runtime()
     agent_id = None
 
     while True:
@@ -338,6 +390,7 @@ def main(prompt=None):
                 prompt = None
                 continue
 
+            print("  ⏳ Cursor Agent running…")
             response, agent_id = ask(
                 prompt,
                 model=CURSOR_MODEL,
@@ -345,6 +398,8 @@ def main(prompt=None):
                 cwd=CURSOR_CWD,
                 api_key=CURSOR_API_KEY,
             )
+            if agent_id:
+                print(f"  ↪ Cursor agent id: {agent_id}")
             parse_n_print_response(response)
             prompt = None
 

@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 # Reuse Windows select() pipe fix
 from agents.cursor_worker import (
     _complete_run,
+    _hatsoff_options,
     _patch_windows_bridge_discovery,
     _prefixed_prompt,
     _run_failed,
@@ -39,7 +40,7 @@ def _send(agent, prompt: str, model: str):
 def handle_turn(payload: dict) -> dict:
     _patch_windows_bridge_discovery()
 
-    from cursor_sdk import Agent, AgentOptions, CursorAgentError, LocalAgentOptions
+    from cursor_sdk import Agent, CursorAgentError
 
     prompt = payload.get("prompt") or ""
     api_key = payload.get("api_key") or ""
@@ -47,6 +48,7 @@ def handle_turn(payload: dict) -> dict:
     cwd = payload.get("cwd") or os.getcwd()
     agent_id = payload.get("agent_id")
     system_prompt = payload.get("system_prompt") or ""
+    opts = _hatsoff_options(api_key, model, cwd) if api_key else None
 
     if not api_key:
         return {"ok": False, "error": "Cursor API key not configured.", "agent_id": agent_id}
@@ -70,10 +72,7 @@ def handle_turn(payload: dict) -> dict:
         # Resume from local store if possible
         if agent_id:
             try:
-                agent = Agent.resume(
-                    agent_id,
-                    AgentOptions(api_key=api_key, model=model),
-                )
+                agent = Agent.resume(agent_id, opts)
                 text, status = _send(agent, prefixed, model)
                 if not _run_failed(status, text):
                     _AGENTS[agent_id] = agent
@@ -86,12 +85,12 @@ def handle_turn(payload: dict) -> dict:
             except CursorAgentError as err:
                 _log(f"resume failed ({err}); creating a new agent")
 
-        # Fresh agent
-        agent = Agent.create(
-            model=model,
-            api_key=api_key,
-            local=LocalAgentOptions(cwd=cwd),
-        )
+        # Fresh HatsOff Cursor Agent
+        try:
+            agent = Agent.create(opts)
+        except Exception as exc:
+            _log(f"HatsOff tools/create failed ({exc}); retrying without KaliGPT tools")
+            agent = Agent.create(_hatsoff_options(api_key, model, cwd, include_tools=False))
         new_id = getattr(agent, "agent_id", None) or getattr(agent, "agentId", None)
         if not new_id:
             agent.close()
@@ -146,6 +145,13 @@ def main() -> int:
         _patch_windows_bridge_discovery()
         # Unbuffered-friendly ready handshake for parent HatsOff process
         print(json.dumps({"ok": True, "ready": True, "pid": os.getpid()}), flush=True)
+        if sys.stdin.isatty():
+            print(
+                "This process is the HatsOff Cursor SDK daemon (JSON lines), not a chat.\n"
+                "Talk to the agent:  python -m agents.cursor\n"
+                "Desktop UI:         python -m agents.desktop --browser",
+                file=sys.stderr,
+            )
     except Exception as exc:
         print(
             json.dumps({"ok": False, "ready": False, "error": str(exc)}),
@@ -161,8 +167,17 @@ def main() -> int:
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError as exc:
+                hint = (
+                    "Not a chat prompt. This daemon speaks JSON lines. "
+                    "Run: python -m agents.cursor"
+                )
                 print(
-                    json.dumps({"ok": False, "error": f"Invalid JSON: {exc}"}),
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "error": hint if not line.startswith("{") else f"Invalid JSON: {exc}",
+                        }
+                    ),
                     flush=True,
                 )
                 continue

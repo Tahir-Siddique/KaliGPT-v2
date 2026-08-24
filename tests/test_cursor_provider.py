@@ -36,13 +36,13 @@ class FakeAgent:
 
 
 def test_complete_run_uses_wait_only():
-    import agents.cursor as provider
+    from agents.cursor_worker import _complete_run
 
     run = FakeRun(text="hello")
     run.text = mock.Mock(side_effect=AssertionError("text() must not be called"))
-    text, result = provider._complete_run(run)
+    text, status = _complete_run(run)
     assert text == "hello"
-    assert result.status == "finished"
+    assert status == "finished"
 
 
 def test_ask_uses_daemon_by_default():

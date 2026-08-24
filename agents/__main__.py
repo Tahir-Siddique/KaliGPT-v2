@@ -49,12 +49,13 @@ def main(args):
             if len(args) > 0 and args[0].strip():
                 prompt = args[0]
 
-            command = ["python", "-m", f"agents.{default_model}", prompt]
-            # print(f"[+] Launching KaliGPT with default model: {default_model} & prompt: {prompt}")
-            
+            module_by_provider = {
+                "litellm": "litellm_provider",
+            }
+            module = module_by_provider.get(default_model, default_model)
+            command = [sys.executable, "-m", f"agents.{module}", prompt]
+
             try:
-                # using python -m agents.agent_module_name to launch the agent
-                # print(f"Running command: {' '.join(command)}")
                 subprocess.run(command)
 
             except Exception as e:

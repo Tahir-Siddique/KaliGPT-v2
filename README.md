@@ -196,13 +196,13 @@ Only run against systems you are authorized to test.
 ## CLI (KaliGPT legacy)
 
 ```bash
-python -m agents                 # default provider from config
+python -m agents                 # HatsOff Cursor Agent (default)
+python -m agents.cursor          # same: Cursor Agent + KaliGPT prompt/tools
 python -m agents.gemini
 python -m agents.chatgpt
 python -m agents.ollama
 python -m agents.openrouter
 python -m agents.litellm_provider
-python -m agents.cursor
 ```
 
 Installer / `kaligpt` shim (upstream style): see [install.sh](install.sh) and [requirements/globals.md](requirements/globals.md).

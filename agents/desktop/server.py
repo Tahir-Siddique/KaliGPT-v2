@@ -85,7 +85,7 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
     def providers():
         names = get_available_ais()
         # Prefer known desktop-capable order; include any extras from config
-        preferred = ["gemini", "chatgpt", "ollama", "openrouter", "litellm", "cursor"]
+        preferred = ["cursor", "gemini", "chatgpt", "ollama", "openrouter", "litellm"]
         ordered = [p for p in preferred if p in names] + [
             p for p in names if p not in preferred
         ]
@@ -113,7 +113,7 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
     @app.post("/api/conversations")
     def create_conversation():
         body = request.get_json(silent=True) or {}
-        provider = (body.get("provider") or get_default_provider() or "gemini").strip()
+        provider = (body.get("provider") or get_default_provider() or "cursor").strip()
         model = (
             body.get("model")
             or get_ai_specific_default_model(provider)
@@ -345,7 +345,7 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
         command = (body.get("command") or body.get("cmd") or "").strip()
         if not command:
             return jsonify({"error": "command is required"}), 400
-        provider = (body.get("provider") or get_default_provider() or "gemini").strip()
+        provider = (body.get("provider") or get_default_provider() or "cursor").strip()
         model = body.get("model")
         cwd = body.get("cwd") or os.getcwd()
         try:
@@ -363,7 +363,7 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
         source = (body.get("source") or body.get("text") or "").strip()
         if not source:
             return jsonify({"error": "source is required"}), 400
-        provider = (body.get("provider") or get_default_provider() or "gemini").strip()
+        provider = (body.get("provider") or get_default_provider() or "cursor").strip()
         model = body.get("model")
         cwd = body.get("cwd") or os.getcwd()
         try:
@@ -383,7 +383,7 @@ def create_app(store: Optional[ChatStore] = None) -> Flask:
         timeout = int(body.get("timeout") or 120)
         stop_on_error = body.get("stop_on_error", True)
         pause_on_ask = body.get("pause_on_ask", True)
-        provider = (body.get("provider") or get_default_provider() or "gemini").strip()
+        provider = (body.get("provider") or get_default_provider() or "cursor").strip()
         model = body.get("model")
         values = body.get("inputs") or body.get("values") or {}
         if not isinstance(values, dict):
