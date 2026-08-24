@@ -184,17 +184,17 @@ def change_ai_model():
         print("Model Change failed. Try Again ( 3 attempts consumed )...")
 
 def reset_ai_model_to_default():
-    """Setting AI Model to default model - 'gemini-2.5-flash' """
+    """Setting AI Model to default HatsOff Cursor Agent model."""
 
     global DEFAULT_AI_MODEL
     DEFAULT_AI_MODEL = get_default_model()
     data = f"\n [+] Current Default AI Model » {Colors.BOLD}{DEFAULT_AI_MODEL}{Colors.RESET}"
 
-    DEFAULT_AI_MODEL = "gemini-2.5-flash"
+    DEFAULT_AI_MODEL = "composer-2.5"
     max_attempts = 10
 
     for attempt in range(max_attempts):
-        if update_default_model(DEFAULT_AI_MODEL) and update_default_provider("gemini"):
+        if update_default_model(DEFAULT_AI_MODEL) and update_default_provider("cursor"):
             data += f"\n{Colors.GREEN} [✓] Reset Success :{Colors.RESET} Default AI Model Now » {Colors.BOLD}{DEFAULT_AI_MODEL}{Colors.RESET}"
             console.print(Panel(data, title="( HatsOff - Reset to Default Model )", border_style="blue", padding=(1, 2)))
             break

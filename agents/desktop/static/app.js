@@ -1,7 +1,7 @@
 (() => {
   const state = {
     providers: [],
-    defaultProvider: "gemini",
+    defaultProvider: "cursor",
     conversations: [],
     activeId: null,
     sending: false,
@@ -1145,7 +1145,7 @@
   async function loadProviders() {
     const data = await api("/api/providers");
     state.providers = data.providers || [];
-    state.defaultProvider = data.default_provider || "gemini";
+    state.defaultProvider = data.default_provider || "cursor";
     els.provider.innerHTML = "";
     for (const p of state.providers) {
       const opt = document.createElement("option");

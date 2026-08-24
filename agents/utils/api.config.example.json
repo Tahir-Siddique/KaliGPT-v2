@@ -1,6 +1,6 @@
 {
-  "default_model": "gemini-2.5-flash",
-  "default_provider": "gemini",
+  "default_model": "composer-2.5",
+  "default_provider": "cursor",
   "gemini": {
     "api_key": "YOUR_GEMINI_API_KEY",
     "default_model": "gemini-2.5-flash",

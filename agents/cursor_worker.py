@@ -108,16 +108,21 @@ def _prefixed_prompt(prompt: str, *, agent_id: str | None, system_prompt: str) -
     return prompt
 
 
+def _hatsoff_options(api_key: str, model: str, cwd: str, *, include_tools: bool = True):
+    from agents.hatsoff_cursor import hatsoff_agent_options
+
+    return hatsoff_agent_options(
+        api_key=api_key,
+        model=model,
+        cwd=cwd,
+        include_kaligpt_tools=include_tools,
+    )
+
+
 def run_turn(payload: dict) -> dict:
     _patch_windows_bridge_discovery()
 
-    from cursor_sdk import (
-        Agent,
-        AgentOptions,
-        CursorAgentError,
-        LocalAgentOptions,
-        SendOptions,
-    )
+    from cursor_sdk import Agent, CursorAgentError, SendOptions
 
     prompt = payload.get("prompt") or ""
     api_key = payload.get("api_key") or ""
@@ -131,25 +136,25 @@ def run_turn(payload: dict) -> dict:
 
     prefixed = _prefixed_prompt(prompt, agent_id=agent_id, system_prompt=system_prompt)
     send_opts = SendOptions(model=model)
+    opts = _hatsoff_options(api_key, model, cwd)
 
     try:
         if agent_id:
             try:
-                with Agent.resume(
-                    agent_id,
-                    AgentOptions(api_key=api_key, model=model),
-                ) as agent:
+                with Agent.resume(agent_id, opts) as agent:
                     text, status = _complete_run(agent.send(prefixed, send_opts))
                     if not _run_failed(status, text):
                         return {"ok": True, "text": text, "agent_id": agent_id}
             except CursorAgentError:
                 pass
 
-        with Agent.create(
-            model=model,
-            api_key=api_key,
-            local=LocalAgentOptions(cwd=cwd),
-        ) as agent:
+        try:
+            agent_cm = Agent.create(opts)
+        except Exception:
+            # Custom tools / callback server can fail; still run as Cursor Agent.
+            agent_cm = Agent.create(_hatsoff_options(api_key, model, cwd, include_tools=False))
+
+        with agent_cm as agent:
             new_id = getattr(agent, "agent_id", None) or getattr(agent, "agentId", None)
             fresh = _prefixed_prompt(prompt, agent_id=None, system_prompt=system_prompt)
             text, status = _complete_run(agent.send(fresh, send_opts))

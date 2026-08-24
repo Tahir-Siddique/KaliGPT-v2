@@ -16,7 +16,7 @@ import time
 from typing import IO, Deque, Optional, Tuple
 
 from .utils.agent_configs import get_api_key, get_ai_specific_default_model
-from .utils.prompts import HATSOFF_AGENT as SYSTEM_PROMPT
+from .hatsoff_cursor import HATSOFF_CURSOR_PROMPT as SYSTEM_PROMPT
 
 
 CURSOR_API_KEY: Optional[str] = None
@@ -28,6 +28,30 @@ _daemon_proc: Optional[subprocess.Popen] = None
 _daemon_lock = threading.Lock()
 _daemon_stderr: Deque[str] = collections.deque(maxlen=120)
 _daemon_stderr_thread: Optional[threading.Thread] = None
+
+
+def _inprocess_enabled() -> bool:
+    return os.environ.get("KALIGPT_CURSOR_INPROCESS", "").strip() in (
+        "1",
+        "true",
+        "True",
+    )
+
+
+def _daemon_pid() -> Optional[int]:
+    if _daemon_proc is not None and _daemon_proc.poll() is None:
+        return _daemon_proc.pid
+    return None
+
+
+def _startup_bridge() -> tuple[Optional[int], Optional[str]]:
+    if _inprocess_enabled():
+        return None, None
+    try:
+        proc = _ensure_daemon()
+        return proc.pid, None
+    except Exception as exc:
+        return None, str(exc)
 
 
 def _resolve_api_key() -> Optional[str]:
@@ -271,11 +295,7 @@ def ask(
     if not key:
         return ("Error: Cursor API key not configured.", None)
 
-    use_inprocess = os.environ.get("KALIGPT_CURSOR_INPROCESS", "").strip() in (
-        "1",
-        "true",
-        "True",
-    )
+    use_inprocess = _inprocess_enabled()
 
     with _CURSOR_LOCK:
         try:
@@ -320,40 +340,125 @@ def ask(
 
 
 def main(prompt=None):
+    from . import cursor_cli as ui
     from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
-    from .utils.parse_n_print_response import parse_n_print_response
 
     initialize_configs()
-    print(f"㉿ HatsOff ( cursor/{CURSOR_MODEL} )")
+    daemon_pid, daemon_error = _startup_bridge()
     agent_id = None
+    model = CURSOR_MODEL or "composer-2.5"
+    cwd = CURSOR_CWD or os.getcwd()
 
+    def toolbar() -> str:
+        bits = [
+            model,
+            f"pid {daemon_pid}" if daemon_pid else ("in-process" if _inprocess_enabled() else "no daemon"),
+            _short_toolbar_id(agent_id),
+            "Ctrl+C exit",
+        ]
+        return "  ·  ".join(bits)
+
+    ui.print_startup(
+        model=model,
+        cwd=cwd,
+        inprocess=_inprocess_enabled(),
+        daemon_pid=daemon_pid,
+        daemon_error=daemon_error,
+        agent_id=agent_id,
+    )
+
+    try:
+        session = ui.make_prompt_session(toolbar)
+    except Exception:
+        session = None
+
+    pending = prompt
     while True:
         try:
-            if prompt is None:
-                prompt = input("\nYou ➤ ")
-
-            if prompt.lower().replace("-", " ").strip() in AI_MANAGEMENT_OPTIONS:
-                agent_management(prompt.lower().replace("-", " ").strip())
-                initialize_configs()
-                prompt = None
+            line = ui.read_line(session, initial=pending) if session else (
+                pending if pending is not None else input("You › ")
+            )
+            pending = None
+            text = (line or "").strip()
+            if not text:
                 continue
 
-            response, agent_id = ask(
-                prompt,
-                model=CURSOR_MODEL,
-                agent_id=agent_id,
-                cwd=CURSOR_CWD,
-                api_key=CURSOR_API_KEY,
-            )
-            parse_n_print_response(response)
-            prompt = None
+            cmd = text.lower().replace("-", " ").strip()
+            first = cmd.split()[0]
 
-        except KeyboardInterrupt:
-            print("\n   Exiting HatsOff. See you later!")
+            if first in ui.SLASH_EXIT or cmd in ui.SLASH_EXIT:
+                ui.print_notice("Exiting Cursor Agent.", style="green")
+                break
+
+            if first == "/help" or cmd == "/help":
+                ui.print_help()
+                continue
+
+            if first == "/status" or cmd == "/status":
+                ui.print_status(
+                    model=model,
+                    cwd=cwd,
+                    inprocess=_inprocess_enabled(),
+                    daemon_pid=_daemon_pid() or daemon_pid,
+                    agent_id=agent_id,
+                )
+                continue
+
+            if first == "/msf" or cmd == "/msf":
+                ui.print_msf()
+                continue
+
+            if first == "/new" or cmd == "/new":
+                agent_id = None
+                ui.print_notice("New Cursor Agent on next message (previous id discarded).")
+                continue
+
+            if first == "/clear" or cmd == "/clear":
+                ui.console().clear()
+                ui.print_startup(
+                    model=model,
+                    cwd=cwd,
+                    inprocess=_inprocess_enabled(),
+                    daemon_pid=_daemon_pid() or daemon_pid,
+                    daemon_error=None,
+                    agent_id=agent_id,
+                )
+                continue
+
+            if cmd in AI_MANAGEMENT_OPTIONS:
+                agent_management(cmd)
+                initialize_configs()
+                model = CURSOR_MODEL or model
+                continue
+
+            ui.print_user(text)
+            with ui.console().status(
+                "[bold cyan]Cursor Agent working…[/bold cyan]",
+                spinner="dots",
+            ):
+                response, agent_id = ask(
+                    text,
+                    model=model,
+                    agent_id=agent_id,
+                    cwd=cwd,
+                    api_key=CURSOR_API_KEY,
+                )
+            ui.print_agent(response, agent_id=agent_id)
+
+        except (KeyboardInterrupt, EOFError):
+            ui.print_notice("\nExiting Cursor Agent.", style="green")
             break
         except Exception as err:
-            print(f"\n[!] An error occurred: {err}")
+            ui.print_notice(f"CLI error: {err}", style="red")
             break
+
+
+def _short_toolbar_id(agent_id: Optional[str]) -> str:
+    if not agent_id:
+        return "agent —"
+    if len(agent_id) <= 18:
+        return agent_id
+    return agent_id[:8] + "…" + agent_id[-6:]
 
 
 if __name__ == "__main__":

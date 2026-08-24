@@ -17,8 +17,8 @@ def _load_config() -> Dict[str, Any]:
     """Reads JSON config. Creates a new file with default data if missing or corrupted."""
 
     default_data = {
-        "default_model": "gemini-2.5-flash",
-        "default_provider": "ollama",
+        "default_model": "composer-2.5",
+        "default_provider": "cursor",
         "gemini": {
             "api_key": "GEMINI_API_KEY",
             "default_model": "gemini-2.5-flash",
@@ -109,7 +109,7 @@ def get_default_model() -> str:
 def get_default_provider():
     """Returns the AI provider associated with the global default model."""
     data = _load_config()
-    default_provider = data.get('default_provider', 'gemini')  # Fallback to gemini for safety
+    default_provider = data.get('default_provider', 'cursor')
     return default_provider
 
 # Function 2: Update the global default AI model
@@ -229,7 +229,7 @@ def get_settings() -> Dict[str, Any]:
             }
         )
     return {
-        "default_provider": data.get("default_provider", "gemini"),
+        "default_provider": data.get("default_provider", "cursor"),
         "default_model": data.get("default_model"),
         "config_path": str(CONFIG_FILE),
         "providers": out_providers,
@@ -280,7 +280,7 @@ def _provider_label(name: str) -> str:
         "ollama": "Ollama",
         "openrouter": "OpenRouter",
         "litellm": "LiteLLM",
-        "cursor": "Cursor",
+        "cursor": "HatsOff · Cursor Agent",
     }
     return labels.get(name, name.title())
 
@@ -292,7 +292,7 @@ def _provider_help(name: str) -> str:
         "ollama": "Local Ollama server URL, e.g. http://localhost:11434",
         "openrouter": "Paste your OpenRouter key (sk-or-v1-…).",
         "litellm": "Optional gateway hint; LiteLLM mostly uses each vendor’s own env/keys.",
-        "cursor": "Paste your Cursor API key from Dashboard → Integrations (cursor_…).",
+        "cursor": "Cursor Agent runtime for HatsOff. Paste a Cursor API key from Dashboard → Integrations.",
     }
     return help_text.get(name, "Paste the credential for this provider.")
 
