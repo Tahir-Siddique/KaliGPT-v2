@@ -22,7 +22,7 @@ HatsOff is the desktop experience built on the KaliGPT / HackerX agent stack: mu
 
 | Area | What you get |
 |------|----------------|
-| **Desktop UI** | ChatGPT-style local app (WebView2 on Windows, GTK/WebKit on Kali) |
+| **Desktop UI** | ChatGPT-style local app (WebView2 on Windows, GTK/WebKit on Kali); syntax-highlighted code |
 | **Providers** | Gemini, ChatGPT, Ollama, OpenRouter, LiteLLM, Cursor |
 | **Labs** | **Run** on code blocks; **Run script (AI ordered)** with discover → ask → act |
 | **Windows lab** | Commands run in **WSL** (Kali preferred, any distro works); missing tools auto-`apt` as root |

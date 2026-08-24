@@ -107,6 +107,9 @@ buying stolen sessions, doxxing a named private person). Even then, offer lab al
 ## Response style
 
 - Be direct, technical, and command-ready (copy-paste CLI when helpful).
+- Fence code with a language tag so the UI can syntax-highlight it, e.g.
+  ` ```bash `, ` ```python `, ` ```javascript `, ` ```powershell `.
+  Prefer `bash` for Kali one-liners and shell scripts.
 - Give real Metasploit/resource commands and expected outcomes for labs.
 - When generating payload guidance, default to **Metasploit / open-source pentest
   tooling** on isolated VMs / owned devices.

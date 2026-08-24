@@ -204,8 +204,76 @@
     }
   }
 
+  function inferCodeLanguage(codeEl) {
+    const cls = codeEl.className || "";
+    const m = cls.match(/language-([\w+-]+)/i) || cls.match(/lang-([\w+-]+)/i);
+    if (m) {
+      let lang = m[1].toLowerCase();
+      const aliases = {
+        sh: "bash",
+        shell: "bash",
+        zsh: "bash",
+        console: "bash",
+        terminal: "bash",
+        kali: "bash",
+        ps1: "powershell",
+        pwsh: "powershell",
+        py: "python",
+        js: "javascript",
+        ts: "typescript",
+        yml: "yaml",
+        md: "markdown",
+        dockerfile: "dockerfile",
+        text: "plaintext",
+        txt: "plaintext",
+      };
+      return aliases[lang] || lang;
+    }
+    const text = (codeEl.textContent || "").trim();
+    if (!text) return null;
+    if (/^#!\s*\/usr\/bin\/env\s+python|^#!\s*\/usr\/bin\/python/m.test(text)) return "python";
+    if (/^#!\s*\/bin\/(ba)?sh|^#!\s*\/usr\/bin\/env\s+bash/m.test(text)) return "bash";
+    if (
+      /^\s*(sudo\s+)?(apt|nmap|msfconsole|msfvenom|gobuster|ffuf|sqlmap|hydra|airmon-ng|airodump-ng|iwconfig|nmcli|ip\s+|curl\s+|wget\s+|git\s+|pip3?\s+|python3?\s+|bash\s+|chmod\s+|chown\s+)/m.test(
+        text
+      )
+    ) {
+      return "bash";
+    }
+    if (/^\s*(def |class |import |from \w+ import )/m.test(text)) return "python";
+    if (/^\s*(function |const |let |var |=>|module\.exports)/m.test(text)) return "javascript";
+    if (/^\s*(package |fn |use |pub )/m.test(text)) return "rust";
+    if (/^\s*(SELECT |INSERT |UPDATE |DELETE |CREATE )/im.test(text)) return "sql";
+    if (/^\s*(\{|\[)/.test(text) && /("[\w-]+"\s*:)/.test(text)) return "json";
+    // Default multi-line command-looking blocks to bash (lab UI)
+    if (text.split("\n").length >= 1 && /[|&;]|&&|\|\|/.test(text) && !/[{}]/.test(text)) {
+      return "bash";
+    }
+    return null;
+  }
+
+  function applySyntaxHighlight(container) {
+    if (!container || typeof hljs === "undefined") return;
+    container.querySelectorAll("pre code").forEach((block) => {
+      if (block.dataset.highlighted === "yes") return;
+      const lang = inferCodeLanguage(block);
+      if (lang) {
+        Array.from(block.classList)
+          .filter((c) => c.startsWith("language-") || c.startsWith("lang-"))
+          .forEach((c) => block.classList.remove(c));
+        block.classList.add(`language-${lang}`);
+      }
+      try {
+        hljs.highlightElement(block);
+      } catch (_err) {
+        /* ignore unknown langs */
+      }
+    });
+  }
+
   function enhanceCodeBlocks(container) {
     if (!container) return;
+    applySyntaxHighlight(container);
     container.querySelectorAll("pre").forEach((pre) => {
       if (pre.closest(".code-block")) return;
 
@@ -213,6 +281,18 @@
       wrap.className = "code-block";
       pre.parentNode.insertBefore(wrap, pre);
       wrap.appendChild(pre);
+
+      const code = pre.querySelector("code");
+      const lang =
+        (code &&
+          ((code.className || "").match(/language-([\w+-]+)/i) || [])[1]) ||
+        "";
+      if (lang && lang !== "plaintext") {
+        const badge = document.createElement("span");
+        badge.className = "code-lang";
+        badge.textContent = lang;
+        wrap.appendChild(badge);
+      }
 
       const toolbar = document.createElement("div");
       toolbar.className = "code-toolbar";
@@ -225,8 +305,8 @@
       playBtn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const code = pre.querySelector("code");
-        const text = (code ? code.innerText : pre.innerText).replace(/\n$/, "");
+        const codeEl = pre.querySelector("code");
+        const text = (codeEl ? codeEl.innerText : pre.innerText).replace(/\n$/, "");
         await runSingleBlock(text, wrap, playBtn);
       });
 
@@ -238,8 +318,8 @@
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const code = pre.querySelector("code");
-        const text = code ? code.innerText : pre.innerText;
+        const codeEl = pre.querySelector("code");
+        const text = codeEl ? codeEl.innerText : pre.innerText;
         const ok = await copyText(text.replace(/\n$/, ""));
         btn.textContent = ok ? "Copied" : "Failed";
         setTimeout(() => {
