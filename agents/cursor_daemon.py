@@ -21,6 +21,7 @@ from agents.cursor_worker import (
     _patch_windows_bridge_discovery,
     _prefixed_prompt,
     _run_failed,
+    configure_utf8_stdio,
     drive_run,
 )
 
@@ -28,11 +29,16 @@ _AGENTS: Dict[str, Any] = {}
 
 
 def _log(msg: str) -> None:
-    print(msg, file=sys.stderr, flush=True)
+    try:
+        print(msg, file=sys.stderr, flush=True)
+    except UnicodeEncodeError:
+        print(msg.encode("ascii", errors="replace").decode("ascii"), file=sys.stderr, flush=True)
 
 
 def _emit_progress(event: dict) -> None:
-    print(json.dumps(event, ensure_ascii=False, default=str), flush=True)
+    # ASCII JSON so Windows cp1252 pipes never choke on arrows (→) in live logs.
+    line = json.dumps(event, ensure_ascii=True, default=str)
+    print(line, flush=True)
 
 
 def _send(agent, prompt: str, model: str):
@@ -63,25 +69,29 @@ def handle_turn(payload: dict) -> dict:
 
     prefixed = _prefixed_prompt(prompt, agent_id=agent_id, system_prompt=system_prompt)
 
-    try:
-        # Hot path: agent already open in this daemon
-        if agent_id and agent_id in _AGENTS:
-            text, status, usage = _send(_AGENTS[agent_id], prefixed, model)
-            if not _run_failed(status, text):
-                result = {"ok": True, "text": text, "agent_id": agent_id}
-                if usage:
-                    result["usage"] = usage
-                return result
-            _log(f"run error for cached agent {agent_id}; evicting and retrying fresh")
-            try:
-                _AGENTS[agent_id].close()
-            except Exception:
-                pass
-            _AGENTS.pop(agent_id, None)
-            agent_id = None
+    def _failed(text: str, keep_id: Any, usage: Optional[dict] = None) -> dict:
+        result = {"ok": False, "error": text, "agent_id": keep_id}
+        if usage:
+            result["usage"] = usage
+        return result
 
-        # Resume from local store if possible
+    try:
+        # Continue an existing agent. Never create a replacement unless agent_id is unset.
         if agent_id:
+            if agent_id in _AGENTS:
+                text, status, usage = _send(_AGENTS[agent_id], prefixed, model)
+                if not _run_failed(status, text):
+                    result = {"ok": True, "text": text, "agent_id": agent_id}
+                    if usage:
+                        result["usage"] = usage
+                    return result
+                _log(f"run error for cached agent {agent_id}; will try resume")
+                try:
+                    _AGENTS[agent_id].close()
+                except Exception:
+                    pass
+                _AGENTS.pop(agent_id, None)
+
             try:
                 agent = Agent.resume(agent_id, opts)
                 text, status, usage = _send(agent, prefixed, model)
@@ -91,15 +101,20 @@ def handle_turn(payload: dict) -> dict:
                     if usage:
                         result["usage"] = usage
                     return result
-                _log(f"run error after resume for {agent_id}; creating a new agent")
                 try:
                     agent.close()
                 except Exception:
                     pass
+                return _failed(text, agent_id, usage)
             except CursorAgentError as err:
-                _log(f"resume failed ({err}); creating a new agent")
+                msg = getattr(err, "message", str(err))
+                _log(f"resume failed ({err}); not creating a new agent")
+                return _failed(
+                    f"Could not continue previous session ({msg}). Type /new to start a fresh agent.",
+                    agent_id,
+                )
 
-        # Fresh HatsOff Cursor Agent
+        # Fresh HatsOff Cursor Agent — only when no previous id was requested
         try:
             agent = Agent.create(opts)
         except Exception as exc:
@@ -158,6 +173,7 @@ def handle(payload: dict) -> dict:
 
 
 def main() -> int:
+    configure_utf8_stdio()
     try:
         _patch_windows_bridge_discovery()
         # Unbuffered-friendly ready handshake for parent HatsOff process

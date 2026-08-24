@@ -89,6 +89,8 @@ def _daemon_env() -> dict:
     root = _repo_root()
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = root if not existing else os.pathsep.join([root, existing])
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     return env
 
 
@@ -174,6 +176,8 @@ def _ensure_daemon() -> subprocess.Popen:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             env=_daemon_env(),
             cwd=_repo_root(),
@@ -265,19 +269,6 @@ def _ask_via_daemon(
     data = _read_turn_response(
         proc.stdout, timeout=900.0, on_progress=on_progress
     )
-
-    if data.get("ok"):
-        return _finish_turn(data, agent_id=agent_id, on_progress=on_progress)
-    err = str(data.get("error") or "Cursor error")
-    if err.startswith("Run failed:") and agent_id:
-        return _ask_via_daemon(
-            prompt,
-            model=model,
-            agent_id=None,
-            cwd=cwd,
-            api_key=api_key,
-            on_progress=on_progress,
-        )
     return _finish_turn(data, agent_id=agent_id, on_progress=on_progress)
 
 
@@ -308,11 +299,6 @@ def ask_inprocess(
     result = run_turn(payload, emit=on_progress)
     if result.get("ok"):
         return _finish_turn(result, agent_id=None, on_progress=on_progress)
-    err = str(result.get("error") or "Cursor error")
-    if err.startswith("Run failed:") and agent_id:
-        result = run_turn({**payload, "agent_id": None}, emit=on_progress)
-        if result.get("ok"):
-            return _finish_turn(result, agent_id=None, on_progress=on_progress)
     return _finish_turn(result, agent_id=agent_id, on_progress=on_progress)
 
 
@@ -371,7 +357,7 @@ def ask(
                     return _ask_via_daemon(
                         prompt,
                         model=model,
-                        agent_id=None,
+                        agent_id=agent_id,
                         cwd=cwd,
                         api_key=key,
                         on_progress=on_progress,
@@ -383,13 +369,18 @@ def ask(
 
 def main(prompt=None):
     from . import cursor_cli as ui
+    from .cursor_worker import configure_utf8_stdio
     from .utils.agent_management import AI_MANAGEMENT_OPTIONS, agent_management
 
+    configure_utf8_stdio()
     initialize_configs()
     daemon_pid, daemon_error = _startup_bridge()
-    agent_id = None
     model = CURSOR_MODEL or "composer-2.5"
     cwd = CURSOR_CWD or os.getcwd()
+    from . import cursor_sessions as sessions
+
+    agent_id = sessions.last_id()
+    resumed = bool(agent_id)
 
     def toolbar() -> str:
         bits = [
@@ -407,7 +398,13 @@ def main(prompt=None):
         daemon_pid=daemon_pid,
         daemon_error=daemon_error,
         agent_id=agent_id,
+        resumed=resumed,
     )
+    if resumed:
+        ui.print_notice(
+            "Continuing the previous Cursor agent until you type /new.",
+            style="green",
+        )
 
     try:
         session = ui.make_prompt_session(toolbar)
@@ -450,8 +447,29 @@ def main(prompt=None):
                 ui.print_msf()
                 continue
 
+            if first == "/ls" or cmd == "/ls":
+                ui.print_sessions(sessions.load_sessions().get("sessions") or [])
+                continue
+
+            if first == "/resume" or cmd.startswith("/resume"):
+                parts = text.split(maxsplit=1)
+                wanted = parts[1].strip() if len(parts) > 1 else sessions.last_id()
+                if not wanted:
+                    saved = sessions.load_sessions().get("sessions") or []
+                    wanted = saved[0].get("id") if saved else None
+                if not wanted:
+                    ui.print_notice("No saved session to resume. Chat once first.", style="yellow")
+                    continue
+                agent_id = str(wanted)
+                resumed = True
+                sessions.remember_session(agent_id, cwd=cwd, model=model)
+                ui.print_notice(f"Resuming {agent_id}", style="green")
+                continue
+
             if first == "/new" or cmd == "/new":
                 agent_id = None
+                resumed = False
+                sessions.clear_last()
                 ui.print_notice("New Cursor Agent on next message (previous id discarded).")
                 continue
 
@@ -464,6 +482,7 @@ def main(prompt=None):
                     daemon_pid=_daemon_pid() or daemon_pid,
                     daemon_error=None,
                     agent_id=agent_id,
+                    resumed=resumed,
                 )
                 continue
 
@@ -495,6 +514,9 @@ def main(prompt=None):
                     )
             if ui.is_error_reply(response) or not live.saw_assistant:
                 ui.print_agent(response, agent_id=agent_id)
+            if agent_id and not ui.is_error_reply(response):
+                sessions.remember_session(agent_id, cwd=cwd, model=model)
+                resumed = True
 
         except (KeyboardInterrupt, EOFError):
             ui.print_notice("\nExiting Cursor Agent.", style="green")

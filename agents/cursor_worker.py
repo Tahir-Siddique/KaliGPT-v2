@@ -17,6 +17,20 @@ import time
 from typing import Any, Callable, Mapping, Optional
 
 
+def configure_utf8_stdio() -> None:
+    """Windows cp1252/charmap cannot encode arrows (→) and other Unicode."""
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream in (sys.stdout, sys.stderr, sys.stdin):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def _patch_windows_bridge_discovery() -> None:
     """Replace cursor_sdk bridge discovery with a Windows-safe pipe reader."""
     if os.name != "nt":
@@ -107,7 +121,10 @@ def drive_run(
 
     if emit is not None:
         for item in iter_progress(run):
-            emit(item)
+            try:
+                emit(item)
+            except UnicodeEncodeError:
+                continue
     text, status = _complete_run(run)
     usage = usage_as_dict(getattr(run, "usage", None))
     if usage is None:
@@ -177,10 +194,17 @@ def run_turn(
                     text, status, usage = drive_run(
                         agent.send(prefixed, send_opts), emit=emit
                     )
-                    if not _run_failed(status, text):
-                        return finish(text, status, agent_id, usage)
-            except CursorAgentError:
-                pass
+                    return finish(text, status, agent_id, usage)
+            except CursorAgentError as err:
+                msg = getattr(err, "message", str(err))
+                return {
+                    "ok": False,
+                    "error": (
+                        f"Could not continue previous session ({msg}). "
+                        "Type /new to start a fresh agent."
+                    ),
+                    "agent_id": agent_id,
+                }
 
         try:
             agent_cm = Agent.create(opts)

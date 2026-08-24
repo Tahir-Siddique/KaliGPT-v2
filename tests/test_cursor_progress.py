@@ -146,3 +146,18 @@ def test_turn_live_shows_usage_and_tool_log():
     assert any("Shell" in line for line in live.logs)
     assert live.saw_assistant is True
     assert live.assistant == "Ready."
+
+
+def test_progress_json_escapes_arrows_for_windows_pipes():
+    import json
+
+    event = {
+        "type": "progress",
+        "kind": "assistant",
+        "text": "recon → exploit",
+        "delta": True,
+    }
+    line = json.dumps(event, ensure_ascii=True)
+    line.encode("cp1252")
+    assert "\\u2192" in line
+    assert json.loads(line)["text"] == "recon → exploit"

@@ -99,3 +99,38 @@ def test_run_turn_creates_hatsoff_agent(monkeypatch):
     assert result["text"] == "hatsoff-ok"
     assert result["agent_id"] == "agent-hatsoff"
     assert captured["opts"].name == "HatsOff"
+
+
+def test_run_turn_does_not_create_when_resuming(monkeypatch):
+    from types import SimpleNamespace
+
+    import agents.cursor_worker as worker
+
+    class ResumeErr(Exception):
+        message = "agent not found"
+
+    fake_sdk = mock.MagicMock()
+    fake_sdk.Agent.create = mock.Mock(side_effect=AssertionError("must not create"))
+    fake_sdk.Agent.resume = mock.Mock(side_effect=ResumeErr("agent not found"))
+    fake_sdk.CursorAgentError = ResumeErr
+    fake_sdk.SendOptions = mock.Mock()
+    monkeypatch.setitem(__import__("sys").modules, "cursor_sdk", fake_sdk)
+    monkeypatch.setattr(
+        worker,
+        "_hatsoff_options",
+        lambda *a, **k: SimpleNamespace(name="HatsOff"),
+    )
+
+    result = worker.run_turn(
+        {
+            "prompt": "hi",
+            "api_key": "k",
+            "model": "composer-2.5",
+            "cwd": ".",
+            "agent_id": "agent-keep",
+        }
+    )
+    assert result["ok"] is False
+    assert result["agent_id"] == "agent-keep"
+    assert "/new" in result["error"]
+    fake_sdk.Agent.create.assert_not_called()

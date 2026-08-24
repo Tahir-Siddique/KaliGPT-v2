@@ -21,9 +21,19 @@ SLASH_STATUS = "/status"
 SLASH_NEW = "/new"
 SLASH_CLEAR = "/clear"
 SLASH_MSF = "/msf"
+SLASH_LS = "/ls"
+SLASH_RESUME = "/resume"
 SLASH_EXIT = frozenset({"/exit", "/quit", "/bye"})
 CLI_COMMANDS = frozenset(
-    {SLASH_HELP, SLASH_STATUS, SLASH_NEW, SLASH_CLEAR, SLASH_MSF}
+    {
+        SLASH_HELP,
+        SLASH_STATUS,
+        SLASH_NEW,
+        SLASH_CLEAR,
+        SLASH_MSF,
+        SLASH_LS,
+        SLASH_RESUME,
+    }
 ) | SLASH_EXIT
 
 
@@ -41,7 +51,12 @@ def _metasploit_row() -> str:
 
 
 def console() -> Console:
-    return Console(width=get_console_width(), highlight=False)
+    return Console(
+        width=get_console_width(),
+        highlight=False,
+        legacy_windows=False,
+        soft_wrap=True,
+    )
 
 
 def _short_path(path: str, keep: int = 42) -> str:
@@ -92,6 +107,7 @@ def print_startup(
     daemon_pid: Optional[int] = None,
     daemon_error: Optional[str] = None,
     agent_id: Optional[str] = None,
+    resumed: bool = False,
 ) -> None:
     c = console()
     c.print()
@@ -119,7 +135,11 @@ def print_startup(
     else:
         table.add_row("bridge", "[yellow]starting…[/yellow]")
 
-    table.add_row("agent id", f"[white]{_short_id(agent_id)}[/white]")
+    table.add_row(
+        "agent id",
+        f"[white]{_short_id(agent_id)}[/white]"
+        + ("  [green]resuming previous[/green]" if resumed and agent_id else ""),
+    )
     table.add_row("metasploit", _metasploit_row())
     table.add_row(
         "tools",
@@ -127,7 +147,7 @@ def print_startup(
     )
     table.add_row(
         "commands",
-        "[cyan]/help[/cyan]  [cyan]/status[/cyan]  [cyan]/msf[/cyan]  "
+        "[cyan]/help[/cyan]  [cyan]/status[/cyan]  [cyan]/ls[/cyan]  [cyan]/resume[/cyan]  "
         "[cyan]/new[/cyan]  [cyan]/clear[/cyan]  [cyan]/exit[/cyan]",
     )
 
@@ -151,7 +171,9 @@ def print_help() -> None:
     table.add_column("what", style="white")
     table.add_row("/help", "This list")
     table.add_row("/status", "Daemon, model, workspace, Cursor agent id")
-    table.add_row("/new", "Start a fresh Cursor Agent (new agent id)")
+    table.add_row("/ls", "List saved Cursor agent sessions")
+    table.add_row("/resume", "Continue the last saved agent (or /resume <id>)")
+    table.add_row("/new", "Only way to start a fresh Cursor Agent")
     table.add_row("/clear", "Clear the screen and redraw the header")
     table.add_row("/msf", "Show whether Metasploit (msfconsole) is installed")
     table.add_row("/list tools", "KaliGPT tool names")
@@ -159,6 +181,25 @@ def print_help() -> None:
     table.add_row("/exit", "Quit (/quit, /bye)")
     console().print(
         Panel(table, title="[bold]Cursor Agent commands[/bold]", border_style="cyan", padding=(1, 2))
+    )
+
+
+def print_sessions(sessions: list) -> None:
+    if not sessions:
+        print_notice("No saved Cursor agent sessions yet.", style="grey50")
+        return
+    table = Table(show_header=True, box=None, padding=(0, 1))
+    table.add_column("id", style="cyan")
+    table.add_column("updated", style="grey50")
+    table.add_column("workspace", style="white")
+    for item in sessions[:12]:
+        table.add_row(
+            _short_id(str(item.get("id") or "")),
+            str(item.get("updated") or "—"),
+            _short_path(str(item.get("cwd") or ""), 42),
+        )
+    console().print(
+        Panel(table, title="[bold]Saved sessions[/bold]", border_style="cyan", padding=(1, 2))
     )
 
 
@@ -331,7 +372,10 @@ class TurnLive:
                 self.live_tokens = max(self.live_tokens, self.total_tokens)
         self.logs = self.logs[-16:]
         if self._live is not None:
-            self._live.update(self.view())
+            try:
+                self._live.update(self.view())
+            except UnicodeEncodeError:
+                pass
 
     def view(self) -> Any:
         parts: list[Any] = [self._usage_line()]

@@ -13,6 +13,8 @@ def test_cli_commands_recognized():
     assert is_cli_command("/help")
     assert is_cli_command("/status")
     assert is_cli_command(" /New ")
+    assert is_cli_command("/ls")
+    assert is_cli_command("/resume")
     assert is_cli_command("/exit")
     assert is_cli_command("/quit")
     assert not is_cli_command("scan the lab")

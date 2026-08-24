@@ -14,7 +14,7 @@ def get_console_width():
 def print_banner():
     """Prints the HatsOff banner"""
 
-    console2 = Console(width=get_console_width())
+    console2 = Console(width=get_console_width(), legacy_windows=False)
     banner_text = (f"""
         ██╗  ██╗ █████╗ ████████╗███████╗ ██████╗ ███████╗███████╗
         ██║  ██║██╔══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔════╝██╔════╝
@@ -35,7 +35,7 @@ def parse_n_print_response(
     border_style: str = "blue",
 ):
     """Robust Markdown renderer for ALL GenAI response types"""
-    console = Console(width=get_console_width())
+    console = Console(width=get_console_width(), legacy_windows=False)
 
     # Clean excessive newlines
     cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', (api_response_text or "").strip())
