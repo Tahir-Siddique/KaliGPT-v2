@@ -61,6 +61,7 @@ env/
 
 # --- Generated launchers ---
 /hatsoff.cmd
+/hatsoff-agent.cmd
 
 # --- IDEs & editors ---
 .idea/

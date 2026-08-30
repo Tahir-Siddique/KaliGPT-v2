@@ -62,12 +62,24 @@ def _resolve_api_key() -> Optional[str]:
     return env or None
 
 
+def _workspace_cwd() -> str:
+    """Directory the operator launched from — not the HatsOff install path."""
+    env = (
+        os.environ.get("HATSOFF_WORKSPACE")
+        or os.environ.get("HATSOFF_CWD")
+        or ""
+    ).strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    return os.getcwd()
+
+
 def initialize_configs() -> None:
     global CURSOR_API_KEY, CURSOR_MODEL, CURSOR_CWD
     try:
         CURSOR_API_KEY = _resolve_api_key()
         CURSOR_MODEL = get_ai_specific_default_model("cursor") or "composer-2.5"
-        CURSOR_CWD = os.getcwd()
+        CURSOR_CWD = _workspace_cwd()
 
         if not CURSOR_API_KEY:
             print("[!] Cursor API Key not found. Configure it in desktop Settings.")

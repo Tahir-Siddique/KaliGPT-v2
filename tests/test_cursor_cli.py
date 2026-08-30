@@ -27,6 +27,15 @@ def test_error_reply_detection():
     assert not is_error_reply("Here is a Kali nmap plan.")
 
 
+def test_console_width_honors_columns(monkeypatch):
+    from agents.utils.parse_n_print_response import get_console_width
+
+    monkeypatch.setenv("COLUMNS", "72")
+    assert get_console_width() == 72
+    monkeypatch.setenv("COLUMNS", "8")
+    assert get_console_width() >= 20
+
+
 def test_short_helpers():
     assert _short_id(None) == "not started"
     assert "…" in _short_id("a" * 40)

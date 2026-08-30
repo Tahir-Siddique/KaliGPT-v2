@@ -9,7 +9,6 @@ from typing import Any, Callable, Optional
 
 from rich.console import Console, Group
 from rich.live import Live
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -56,7 +55,12 @@ def console() -> Console:
         highlight=False,
         legacy_windows=False,
         soft_wrap=True,
+        no_color=False,
     )
+
+
+def _folded(text: str, *, style: str = "") -> Text:
+    return Text(text, style=style, overflow="fold", no_wrap=False)
 
 
 def _short_path(path: str, keep: int = 42) -> str:
@@ -117,7 +121,7 @@ def print_startup(
     title.append("Cursor Agent", style="bold cyan")
 
     table = Table.grid(padding=(0, 2))
-    table.add_column(style="grey50", no_wrap=True)
+    table.add_column(style="grey50", no_wrap=True, overflow="fold")
     table.add_column(overflow="fold")
     table.add_row("runtime", "[white]Cursor SDK local agent[/white]  (Agent.create / resume)")
     table.add_row("model", f"[white]{model}[/white]")
@@ -246,7 +250,7 @@ def print_status(
 def print_user(text: str) -> None:
     console().print(
         Panel(
-            Text(text.strip(), style="white"),
+            _folded(text.strip(), style="white"),
             title="[bold]You[/bold]",
             title_align="left",
             border_style="#424242",
@@ -380,7 +384,7 @@ class TurnLive:
     def view(self) -> Any:
         parts: list[Any] = [self._usage_line()]
         if self.logs:
-            log = Text()
+            log = Text(overflow="fold", no_wrap=False)
             for line in self.logs:
                 style = "red" if line.startswith("x ") else (
                     "green" if line.startswith("+ ") else "cyan"
@@ -390,12 +394,13 @@ class TurnLive:
                 log.append(line + "\n", style=style)
             parts.append(log)
         if self.shell:
-            parts.append(Text(self.shell[-400:], style="grey50"))
+            parts.append(_folded(self.shell[-400:], style="grey50"))
         if self.thinking and not self.assistant:
-            snippet = self.thinking[-280:].replace("\n", " ")
-            parts.append(Text(snippet, style="italic grey50"))
+            snippet = self.thinking[-400:]
+            parts.append(_folded(snippet, style="italic grey50"))
         if self.assistant:
-            parts.append(Markdown(self.assistant))
+            # Folded plain text wraps in Live; Markdown code blocks often overflow.
+            parts.append(_folded(self.assistant))
         return Group(*parts)
 
     def _usage_line(self) -> Text:
@@ -451,6 +456,7 @@ def make_prompt_session(toolbar: Callable[[], str]):
         style=style,
         bottom_toolbar=bottom_toolbar,
         enable_history_search=True,
+        wrap_lines=True,
     )
 
 

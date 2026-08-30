@@ -1,20 +1,66 @@
 """HatsOff CLI AI response Markdown renderer"""
 
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import struct
+
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
-import re
 
-def get_console_width():
-    """Get the current console width, capped at 160 characters."""
-    return min(160, Console().width)
+
+def _windows_visible_columns() -> int | None:
+    """Window width, not the (often huge) screen-buffer width."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        for handle_id in (-11, -12):  # STD_OUTPUT_HANDLE, STD_ERROR_HANDLE
+            handle = kernel32.GetStdHandle(handle_id)
+            csbi = ctypes.create_string_buffer(22)
+            if not kernel32.GetConsoleScreenBufferInfo(handle, csbi):
+                continue
+            _sx, _sy, _cx, _cy, _attr, left, _top, right, _bottom, _mx, _my = struct.unpack(
+                "hhhhHhhhhhh", csbi.raw
+            )
+            width = int(right) - int(left) + 1
+            if 20 <= width <= 500:
+                return width
+    except Exception:
+        return None
+    return None
+
+
+def get_console_width() -> int:
+    """Visible terminal columns so long replies wrap instead of running off-screen."""
+    for key in ("COLUMNS", "HATSOFF_COLUMNS"):
+        raw = (os.environ.get(key) or "").strip()
+        if raw.isdigit():
+            value = int(raw)
+            if 20 <= value <= 500:
+                return value
+    win = _windows_visible_columns()
+    if win:
+        return win
+    try:
+        value = int(shutil.get_terminal_size((80, 24)).columns)
+    except Exception:
+        value = 80
+    if value < 20:
+        return 80
+    return min(value, 200)
 
 
 def print_banner():
     """Prints the HatsOff banner"""
 
-    console2 = Console(width=get_console_width(), legacy_windows=False)
+    console2 = Console(width=get_console_width(), legacy_windows=False, soft_wrap=True)
     banner_text = (f"""
         ██╗  ██╗ █████╗ ████████╗███████╗ ██████╗ ███████╗███████╗
         ██║  ██║██╔══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔════╝██╔════╝
@@ -35,7 +81,7 @@ def parse_n_print_response(
     border_style: str = "blue",
 ):
     """Robust Markdown renderer for ALL GenAI response types"""
-    console = Console(width=get_console_width(), legacy_windows=False)
+    console = Console(width=get_console_width(), legacy_windows=False, soft_wrap=True)
 
     # Clean excessive newlines
     cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', (api_response_text or "").strip())
@@ -65,7 +111,7 @@ def parse_n_print_response(
                 # End block
                 code_content = ''.join(code_buffer).strip()
                 if code_content:
-                    syntax = Syntax(f"\n{code_content}\n", lang, theme="github-dark", line_numbers=True)
+                    syntax = Syntax(f"\n{code_content}\n", lang, theme="github-dark", line_numbers=True, word_wrap=True)
                     console.print(syntax)
                 code_buffer, in_code, lang = [], False, "text"
             else:
@@ -111,7 +157,7 @@ def parse_n_print_response(
         if in_code and code_buffer:
             code_content = ''.join(code_buffer).strip()
             if code_content:
-                syntax = Syntax(f"\n{code_content}\n", lang, theme="github-dark", line_numbers=True)
+                syntax = Syntax(f"\n{code_content}\n", lang, theme="github-dark", line_numbers=True, word_wrap=True)
                 console.print(syntax)
 
     return True

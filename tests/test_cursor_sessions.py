@@ -31,6 +31,13 @@ def test_clear_last_stops_auto_resume(tmp_path, monkeypatch):
     assert saved and saved[0]["id"] == "agent-two"
 
 
+def test_workspace_follows_hatsoff_workspace_env(monkeypatch, tmp_path):
+    from agents import cursor as provider
+
+    monkeypatch.setenv("HATSOFF_WORKSPACE", str(tmp_path))
+    assert provider._workspace_cwd() == str(tmp_path.resolve())
+
+
 def test_cli_resume_commands_recognized():
     from agents.cursor_cli import is_cli_command
 
